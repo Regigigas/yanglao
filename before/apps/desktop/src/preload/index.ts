@@ -545,6 +545,24 @@ const api = {
     }) => ipcRenderer.invoke('iot:report', payload),
   },
 
+  // ── 采购管理 ─────────────────────────────────────────────────
+  purchase: {
+    supplier: {
+      list:   ()                         => ipcRenderer.invoke('purchase:supplier:list'),
+      create: (data: unknown)            => ipcRenderer.invoke('purchase:supplier:create', data),
+      update: (id: string, data: unknown)=> ipcRenderer.invoke('purchase:supplier:update', { id, data }),
+      delete: (id: string)               => ipcRenderer.invoke('purchase:supplier:delete', id),
+    },
+    order: {
+      list:         (status?: string)                             => ipcRenderer.invoke('purchase:order:list', status),
+      create:       (order: unknown, items: unknown[])            => ipcRenderer.invoke('purchase:order:create', { order, items }),
+      updateStatus: (id: string, status: string, remark?: string)=> ipcRenderer.invoke('purchase:order:update-status', { id, status, remark }),
+      items:        (orderId: string)                             => ipcRenderer.invoke('purchase:order:items', orderId),
+      delete:       (id: string)                                  => ipcRenderer.invoke('purchase:order:delete', id),
+      stats:        ()                                            => ipcRenderer.invoke('purchase:order:stats'),
+    },
+  },
+
   // ── 数据库文件路径配置 ─────────────────────────────────────────
   db: {
     getPath: (): Promise<{

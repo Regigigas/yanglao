@@ -1,0 +1,23 @@
+{
+  "name": "@yanglao/sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "数据同步引擎：支持手动/自动/定时/固定时间触发，时间单位 ms/分钟",
+  "type": "commonjs",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "node-cron": "4.6.0",
+    "@yanglao/db": "workspace:*",
+    "@yanglao/core": "workspace:*",
+    "axios": "1.18.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,7 +1,7 @@
 /**
  * care.js — 护理服务 API
  */
-import { get, post, put } from './request'
+import { get, post, put, del } from './request'
 
 /** 获取护理任务列表 */
 export function getCareTaskList(params = {}) {
@@ -46,6 +46,16 @@ export function getCareRecordDetail(recordId) {
 /** 获取护理项目列表 */
 export function getCareItemList() {
   return get('/care/item/list')
+}
+
+/** 更新护理记录 */
+export function updateCareRecord(recordId, data) {
+  return put(`/care/record/${recordId}`, data)
+}
+
+/** 删除护理记录 */
+export function deleteCareRecord(recordId) {
+  return del(`/care/record/${recordId}`)
 }
 
 /** 获取通知公告 */

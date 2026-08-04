@@ -52,6 +52,35 @@
             <text class="info-value">{{ dev.lastOnlineTime || '—' }}</text>
           </view>
         </view>
+        <!-- 操作按钮 -->
+        <view class="dev-actions">
+          <view v-if="!dev.elderlyId" class="dev-btn btn-bind" @tap="showBind(dev)">
+            <text class="iconfont icon-link"></text>
+            <text>绑定老人</text>
+          </view>
+          <view v-else class="dev-btn btn-unbind" @tap="confirmUnbind(dev)">
+            <text class="iconfont icon-unlink"></text>
+            <text>解除绑定</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 绑定老人弹窗 -->
+    <view v-if="showBindModal" class="modal-mask" @tap.self="showBindModal=false">
+      <view class="modal-card">
+        <text class="modal-title">选择绑定老人</text>
+        <view v-for="elder in elderlyList" :key="elder.value"
+          class="elder-option" :class="{ selected: selectedElderlyId === elder.value }"
+          @tap="selectedElderlyId = elder.value">
+          <text class="iconfont icon-elder"></text>
+          <text class="elder-name">{{ elder.label }}</text>
+          <text v-if="selectedElderlyId === elder.value" class="iconfont icon-check check-icon"></text>
+        </view>
+        <view class="modal-btns">
+          <view class="modal-btn cancel" @tap="showBindModal=false">取消</view>
+          <view class="modal-btn confirm" @tap="confirmBind">确认绑定</view>
+        </view>
       </view>
     </view>
   </view>
@@ -60,6 +89,7 @@
 <script>
 import { useDeviceStore }   from '../../store/device'
 import { useSettingsStore } from '../../store/settings'
+import { bindDeviceToElderly, unbindDevice, getElderlyList } from '../../api/device'
 import NavBar from '../../components/NavBar.vue'
 
 export default {
@@ -71,18 +101,48 @@ export default {
       settingsStore: useSettingsStore()
     }
   },
-  data() { return { loading: false } },
+  data() { return { loading: false, elderlyList: [], bindTarget: null, showBindModal: false, selectedElderlyId: '' } },
   computed: {
     devices()      { return this.deviceStore.devices },
     onlineCount()  { return this.devices.filter(d => d.status === 'online').length },
     offlineCount() { return this.devices.filter(d => d.status !== 'online').length }
   },
-  onLoad() { this.loadData() },
+  onLoad() { this.loadData(); this.loadElderly() },
   methods: {
     async loadData() {
       this.loading = true
       try { await this.deviceStore.fetchDevices() }
       finally { this.loading = false }
+    },
+    async loadElderly() {
+      const res = await getElderlyList({ pageSize: 200 }).catch(() => ({}))
+      this.elderlyList = (res.rows || res.data || []).map(e => ({
+        label: e.elderlyName || e.name,
+        value: e.elderlyId || e.id
+      }))
+    },
+    showBind(dev) {
+      this.bindTarget = dev
+      this.selectedElderlyId = ''
+      this.showBindModal = true
+    },
+    async confirmBind() {
+      if (!this.selectedElderlyId) return uni.showToast({ title: '请选择老人', icon: 'none' })
+      await bindDeviceToElderly(this.bindTarget.id || this.bindTarget.deviceId, this.selectedElderlyId).catch(() => {})
+      this.showBindModal = false
+      uni.showToast({ title: '绑定成功', icon: 'success' })
+      this.loadData()
+    },
+    confirmUnbind(dev) {
+      uni.showModal({
+        title: '解除绑定', content: `确认解除 ${dev.elderlyName} 与该设备的绑定？`,
+        success: async ({ confirm }) => {
+          if (!confirm) return
+          await unbindDevice(dev.id || dev.deviceId).catch(() => {})
+          uni.showToast({ title: '已解除绑定', icon: 'success' })
+          this.loadData()
+        }
+      })
     }
   }
 }
@@ -110,7 +170,46 @@ export default {
 
 .card { background: var(--bg-card); border-radius: 16rpx; box-shadow: var(--shadow); margin: 0 24rpx 20rpx; padding: 24rpx; }
 
-.dev-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20rpx; }
+.dev-actions {
+  display: flex; gap: 16rpx; margin-top: 16rpx; padding-top: 16rpx;
+  border-top: 1rpx solid var(--divider-color);
+}
+.dev-btn {
+  flex: 1; height: 68rpx; border-radius: 34rpx;
+  display: flex; align-items: center; justify-content: center; gap: 8rpx;
+  font-size: var(--font-xs, 20rpx); font-weight: 600;
+  .iconfont { font-size: 26rpx; }
+  &.btn-bind   { background: var(--primary-light); color: var(--primary-color); }
+  &.btn-unbind { background: #fef0f0; color: #f56c6c; }
+}
+
+/* 绑定弹窗 */
+.modal-mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000;
+  display: flex; align-items: flex-end;
+}
+.modal-card {
+  width: 100%; background: var(--bg-card); border-radius: 32rpx 32rpx 0 0;
+  padding: 32rpx; max-height: 70vh; overflow-y: auto;
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+}
+.modal-title { font-size: var(--font-lg, 32rpx); font-weight: 600; color: var(--text-primary); display: block; margin-bottom: 24rpx; }
+.elder-option {
+  display: flex; align-items: center; gap: 16rpx; padding: 20rpx 0;
+  border-bottom: 1rpx solid var(--divider-color);
+  .iconfont { font-size: 36rpx; color: var(--primary-color); }
+  .elder-name { flex: 1; font-size: var(--font-sm, 24rpx); color: var(--text-primary); }
+  .check-icon { color: var(--primary-color); }
+  &.selected { background: var(--primary-light); padding-left: 16rpx; border-radius: 12rpx; }
+}
+.modal-btns { display: flex; gap: 24rpx; margin-top: 24rpx; }
+.modal-btn {
+  flex: 1; height: 88rpx; border-radius: 44rpx;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--font-md, 28rpx); font-weight: 600;
+  &.cancel  { background: var(--bg-page); color: var(--text-regular); border: 1rpx solid var(--border-color); }
+  &.confirm { background: var(--primary-color); color: #fff; }
+}
 .dev-title  { display: flex; align-items: center; gap: 12rpx; }
 .dev-icon   { font-size: 40rpx; }
 .dev-name   { font-size: var(--font-md, 28rpx); font-weight: 600; color: var(--text-primary); }

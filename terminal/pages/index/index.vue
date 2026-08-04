@@ -114,6 +114,8 @@ export default {
       todayTaskCount: 0,
       timer:          null,
       quickItems: [
+        { label: '采购管理', icon: 'icon-task',     path: '/pages-purchase/index/index', color: '#e74c3c' },
+        { label: '采购申请', icon: 'icon-add',      path: '/pages-purchase/apply/index',  color: '#c0392b' },
         { label: '健康监测', icon: 'icon-monitor',  path: '/pages-health/monitor/index',  color: '#e74c3c' },
         { label: '健康告警', icon: 'icon-alert',    path: '/pages-health/alerts/index',   color: '#e67e22' },
         { label: '护理任务', icon: 'icon-task',     path: '/pages-care/tasks/index',      color: '#4A90D9' },

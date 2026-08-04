@@ -79,6 +79,7 @@ export default {
     return {
       loading:      false,
       activeFilter: 'all',
+      elderlyId:    '',   // 若从监测页传入则只展示该老人的告警
       filters: [
         { val: 'all',      label: '全部' },
         { val: 'critical', label: '危急' },
@@ -90,13 +91,18 @@ export default {
   computed: {
     filteredAlerts() {
       let list = this.healthStore.healthAlerts
+      // 按老人 ID 过滤（从健康监测页跳转时传入）
+      if (this.elderlyId) list = list.filter(a => String(a.elderlyId) === String(this.elderlyId))
       if (this.activeFilter === 'critical') list = list.filter(a => a.level === 'critical')
       else if (this.activeFilter === 'warning') list = list.filter(a => a.level === 'warning')
       else if (this.activeFilter === 'unread')  list = list.filter(a => !a.isRead)
       return list
     }
   },
-  onLoad() { this.loadData() },
+  onLoad(options) {
+    if (options.elderlyId) this.elderlyId = options.elderlyId
+    this.loadData()
+  },
   methods: {
     async loadData() {
       this.loading = true

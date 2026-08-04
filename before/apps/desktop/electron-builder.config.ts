@@ -11,6 +11,10 @@ const config: Configuration = {
     buildResources: 'resources',
     output: 'release',
   },
+  extraResources: [
+    { from: 'resources/icon.ico', to: 'icon.ico' },
+    { from: 'resources/icon.png', to: 'icon.png' },
+  ],
   files: [
     'out/**/*',
     '!out/**/*.map',

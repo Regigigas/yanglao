@@ -400,6 +400,23 @@ const api = {
     },
     report: (payload) => electron.ipcRenderer.invoke("iot:report", payload)
   },
+  // ── 采购管理 ─────────────────────────────────────────────────
+  purchase: {
+    supplier: {
+      list: () => electron.ipcRenderer.invoke("purchase:supplier:list"),
+      create: (data) => electron.ipcRenderer.invoke("purchase:supplier:create", data),
+      update: (id, data) => electron.ipcRenderer.invoke("purchase:supplier:update", { id, data }),
+      delete: (id) => electron.ipcRenderer.invoke("purchase:supplier:delete", id)
+    },
+    order: {
+      list: (status) => electron.ipcRenderer.invoke("purchase:order:list", status),
+      create: (order, items) => electron.ipcRenderer.invoke("purchase:order:create", { order, items }),
+      updateStatus: (id, status, remark) => electron.ipcRenderer.invoke("purchase:order:update-status", { id, status, remark }),
+      items: (orderId) => electron.ipcRenderer.invoke("purchase:order:items", orderId),
+      delete: (id) => electron.ipcRenderer.invoke("purchase:order:delete", id),
+      stats: () => electron.ipcRenderer.invoke("purchase:order:stats")
+    }
+  },
   // ── 数据库文件路径配置 ─────────────────────────────────────────
   db: {
     getPath: () => electron.ipcRenderer.invoke("db:get-path"),

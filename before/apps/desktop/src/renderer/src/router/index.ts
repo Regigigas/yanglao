@@ -206,6 +206,17 @@ const routes: RouteRecordRaw[] = [
           menuKey: 'iot-device',
         },
       },
+      // ── 采购管理 ──────────────────────────────────
+      {
+        path: 'purchase',
+        name: 'Purchase',
+        component: () => import('../views/purchase/PurchaseView.vue'),
+        meta: {
+          title: '采购管理',
+          icon: 'i-ion:cart-outline',
+          menuKey: 'purchase',
+        },
+      },
       {
         path: 'operations',
         name: 'Operations',

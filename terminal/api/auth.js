@@ -2,7 +2,7 @@
  * auth.js — 认证相关 API
  * 对接 RuoYi 后台认证系统
  */
-import { get, post } from './request'
+import { get, post, put } from './request'
 
 /**
  * 登录

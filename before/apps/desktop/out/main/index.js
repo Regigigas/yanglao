@@ -1275,6 +1275,67 @@ const migrations = [
         WHERE is_default = 1 AND deleted_at IS NULL;
       `);
     }
+  },
+  {
+    version: 31,
+    description: "创建采购管理表（供应商/采购单/采购明细）",
+    up: (db2) => {
+      db2.exec(`
+        CREATE TABLE IF NOT EXISTS supplier (
+          id           TEXT    PRIMARY KEY,
+          name         TEXT    NOT NULL,
+          contact      TEXT,
+          phone        TEXT,
+          address      TEXT,
+          category     TEXT    NOT NULL DEFAULT 'other',
+          tax_no       TEXT,
+          bank_account TEXT,
+          bank_name    TEXT,
+          status       TEXT    NOT NULL DEFAULT 'active',
+          remark       TEXT,
+          created_at   INTEGER NOT NULL,
+          updated_at   INTEGER NOT NULL,
+          deleted_at   INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS purchase_order (
+          id             TEXT    PRIMARY KEY,
+          order_no       TEXT    NOT NULL UNIQUE,
+          supplier_id    TEXT,
+          supplier_name  TEXT,
+          order_date     TEXT    NOT NULL,
+          expect_date    TEXT,
+          total_amount   REAL    NOT NULL DEFAULT 0,
+          paid_amount    REAL    NOT NULL DEFAULT 0,
+          status         TEXT    NOT NULL DEFAULT 'draft',
+          applicant      TEXT,
+          approver       TEXT,
+          approved_at    INTEGER,
+          received_at    INTEGER,
+          remark         TEXT,
+          created_at     INTEGER NOT NULL,
+          updated_at     INTEGER NOT NULL,
+          deleted_at     INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS purchase_order_item (
+          id            TEXT    PRIMARY KEY,
+          order_id      TEXT    NOT NULL,
+          item_name     TEXT    NOT NULL,
+          category      TEXT    NOT NULL DEFAULT 'other',
+          specification TEXT,
+          unit          TEXT    NOT NULL DEFAULT '件',
+          quantity      REAL    NOT NULL,
+          unit_price    REAL    NOT NULL DEFAULT 0,
+          amount        REAL    NOT NULL DEFAULT 0,
+          received_qty  REAL    NOT NULL DEFAULT 0,
+          remark        TEXT,
+          created_at    INTEGER NOT NULL,
+          updated_at    INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_purchase_order_status   ON purchase_order(status);
+        CREATE INDEX IF NOT EXISTS idx_purchase_order_supplier ON purchase_order(supplier_id);
+        CREATE INDEX IF NOT EXISTS idx_purchase_item_order     ON purchase_order_item(order_id);
+      `);
+    }
   }
 ];
 function runMigrations(db2) {
@@ -3615,6 +3676,151 @@ class OperationsRepo {
     this.audit("health_alert", id, "resolve", resolution.trim());
   }
 }
+class SupplierRepo {
+  constructor(db2) {
+    this.db = db2;
+  }
+  db;
+  findAll(activeOnly = false) {
+    const sql = activeOnly ? `SELECT * FROM supplier WHERE deleted_at IS NULL AND status='active' ORDER BY name` : `SELECT * FROM supplier WHERE deleted_at IS NULL ORDER BY name`;
+    return this.db.prepare(sql).all();
+  }
+  findById(id) {
+    return this.db.prepare(`SELECT * FROM supplier WHERE id=? AND deleted_at IS NULL`).get(id);
+  }
+  insert(data) {
+    const now = Date.now();
+    const row = {
+      ...data,
+      id: nanoid$1.nanoid(),
+      created_at: now,
+      updated_at: now,
+      deleted_at: null
+    };
+    this.db.prepare(`
+      INSERT INTO supplier
+        (id,name,contact,phone,address,category,tax_no,bank_account,bank_name,status,remark,created_at,updated_at,deleted_at)
+      VALUES
+        (@id,@name,@contact,@phone,@address,@category,@tax_no,@bank_account,@bank_name,@status,@remark,@created_at,@updated_at,@deleted_at)
+    `).run(row);
+    return row;
+  }
+  update(id, data) {
+    const fields = Object.keys(data);
+    if (!fields.length) return;
+    const sets = [...fields, "updated_at"].map((f) => `${f}=@${f}`).join(",");
+    this.db.prepare(`UPDATE supplier SET ${sets} WHERE id=@id`).run({ ...data, updated_at: Date.now(), id });
+  }
+  delete(id) {
+    this.db.prepare(`UPDATE supplier SET deleted_at=?,updated_at=? WHERE id=?`).run(Date.now(), Date.now(), id);
+  }
+}
+class PurchaseOrderRepo {
+  constructor(db2) {
+    this.db = db2;
+  }
+  db;
+  // ─── 采购单 ──────────────────────────────────────────────────
+  findAll(status) {
+    if (status) {
+      return this.db.prepare(
+        `SELECT * FROM purchase_order WHERE deleted_at IS NULL AND status=? ORDER BY created_at DESC`
+      ).all(status);
+    }
+    return this.db.prepare(
+      `SELECT * FROM purchase_order WHERE deleted_at IS NULL ORDER BY created_at DESC`
+    ).all();
+  }
+  findById(id) {
+    return this.db.prepare(
+      `SELECT * FROM purchase_order WHERE id=? AND deleted_at IS NULL`
+    ).get(id);
+  }
+  create(order, items) {
+    const now = Date.now();
+    const orderId = nanoid$1.nanoid();
+    const orderNo = `PO${now}`;
+    let totalAmount = 0;
+    const itemRows = items.map((it) => {
+      const amount = Number(((it.quantity ?? 0) * (it.unit_price ?? 0)).toFixed(2));
+      totalAmount += amount;
+      return {
+        ...it,
+        id: nanoid$1.nanoid(),
+        order_id: orderId,
+        amount,
+        received_qty: 0,
+        created_at: now,
+        updated_at: now
+      };
+    });
+    const row = {
+      ...order,
+      id: orderId,
+      order_no: orderNo,
+      total_amount: Number(totalAmount.toFixed(2)),
+      paid_amount: 0,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null
+    };
+    const insertOrder = this.db.prepare(`
+      INSERT INTO purchase_order
+        (id,order_no,supplier_id,supplier_name,order_date,expect_date,total_amount,
+         paid_amount,status,applicant,remark,created_at,updated_at,deleted_at)
+      VALUES
+        (@id,@order_no,@supplier_id,@supplier_name,@order_date,@expect_date,@total_amount,
+         @paid_amount,@status,@applicant,@remark,@created_at,@updated_at,@deleted_at)
+    `);
+    const insertItem = this.db.prepare(`
+      INSERT INTO purchase_order_item
+        (id,order_id,item_name,category,specification,unit,quantity,unit_price,amount,received_qty,remark,created_at,updated_at)
+      VALUES
+        (@id,@order_id,@item_name,@category,@specification,@unit,@quantity,@unit_price,@amount,@received_qty,@remark,@created_at,@updated_at)
+    `);
+    const tx = this.db.transaction(() => {
+      insertOrder.run(row);
+      for (const item of itemRows) insertItem.run(item);
+    });
+    tx();
+    return row;
+  }
+  updateStatus(id, status, operatorName) {
+    const now = Date.now();
+    const extra = { status, updated_at: now };
+    if (status === "approved") {
+      extra.approver = operatorName ?? null;
+      extra.approved_at = now;
+    }
+    if (status === "received") {
+      extra.received_at = now;
+    }
+    const sets = Object.keys(extra).map((k) => `${k}=@${k}`).join(",");
+    this.db.prepare(`UPDATE purchase_order SET ${sets} WHERE id=@id`).run({ ...extra, id });
+  }
+  delete(id) {
+    this.db.prepare(`UPDATE purchase_order SET deleted_at=?,updated_at=? WHERE id=?`).run(Date.now(), Date.now(), id);
+  }
+  // ─── 明细 ────────────────────────────────────────────────────
+  findItems(orderId) {
+    return this.db.prepare(
+      `SELECT * FROM purchase_order_item WHERE order_id=? ORDER BY created_at`
+    ).all(orderId);
+  }
+  // ─── 统计 ────────────────────────────────────────────────────
+  getStats() {
+    return this.db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN status='draft'    THEN 1 ELSE 0 END) AS draft,
+        SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved,
+        SUM(CASE WHEN status='received' THEN 1 ELSE 0 END) AS received,
+        COALESCE(SUM(total_amount),0)                      AS total_amount
+      FROM purchase_order WHERE deleted_at IS NULL
+    `).get();
+  }
+}
 let _db = null;
 function initDatabase(dbPath2) {
   if (_db) return _db;
@@ -3652,7 +3858,9 @@ function createRepos(db2 = getDatabase()) {
     permissionGroup: new PermissionGroupRepo(db2),
     taskReminder: new TaskReminderRepo(db2),
     announcement: new AnnouncementRepo(db2),
-    operations: new OperationsRepo(db2)
+    operations: new OperationsRepo(db2),
+    supplier: new SupplierRepo(db2),
+    purchaseOrder: new PurchaseOrderRepo(db2)
   };
 }
 class SyncEngine {
@@ -8731,6 +8939,30 @@ function registerOperationsHandlers(ipc, repo) {
     return { ok: true };
   });
 }
+function registerPurchaseHandlers(ipc, supplierRepo, orderRepo) {
+  ipc.handle("purchase:supplier:list", () => supplierRepo.findAll());
+  ipc.handle("purchase:supplier:create", (_e, data) => supplierRepo.insert(data));
+  ipc.handle("purchase:supplier:update", (_e, { id, data }) => {
+    supplierRepo.update(id, data);
+    return { ok: true };
+  });
+  ipc.handle("purchase:supplier:delete", (_e, id) => {
+    supplierRepo.delete(id);
+    return { ok: true };
+  });
+  ipc.handle("purchase:order:list", (_e, status) => orderRepo.findAll(status));
+  ipc.handle("purchase:order:items", (_e, orderId) => orderRepo.findItems(orderId));
+  ipc.handle("purchase:order:stats", () => orderRepo.getStats());
+  ipc.handle("purchase:order:create", (_e, { order, items }) => orderRepo.create(order, items));
+  ipc.handle("purchase:order:update-status", (_e, { id, status, remark }) => {
+    orderRepo.updateStatus(id, status, remark);
+    return { ok: true };
+  });
+  ipc.handle("purchase:order:delete", (_e, id) => {
+    orderRepo.delete(id);
+    return { ok: true };
+  });
+}
 function readAppConfig(configPath) {
   try {
     if (fs.existsSync(configPath)) {
@@ -9097,12 +9329,15 @@ if (gotSingleInstanceLock) {
   });
 }
 function createWindow() {
+  const iconExtension = process.platform === "win32" ? "ico" : "png";
+  const iconPath = utils.is.dev ? path.join(__dirname, `../../resources/icon.${iconExtension}`) : path.join(process.resourcesPath, `icon.${iconExtension}`);
   mainWindow = new electron.BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 960,
     minHeight: 600,
     show: false,
+    icon: iconPath,
     autoHideMenuBar: true,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
@@ -9162,6 +9397,7 @@ registerPermissionGroupHandlers(electron.ipcMain, repos.permissionGroup);
 registerTaskReminderHandlers(electron.ipcMain, repos.taskReminder);
 registerAnnouncementHandlers(electron.ipcMain, repos.announcement);
 registerOperationsHandlers(electron.ipcMain, repos.operations);
+registerPurchaseHandlers(electron.ipcMain, repos.supplier, repos.purchaseOrder);
 registerDbHandlers(electron.ipcMain, defaultDbPath, appConfigPath, () => mainWindow);
 cron.schedule("* * * * *", () => {
   try {

@@ -3,14 +3,20 @@ import { useSettingsStore } from './store/settings'
 
 export default {
   onLaunch() {
-    const settings = useSettingsStore()
-    settings.initFromStorage()
-    this.applyGlobalSettings(settings)
-
-    // 检查登录状态
+    // 先检查 token，不依赖 Pinia，避免时序问题
     const token = uni.getStorageSync('yl_token')
     if (!token) {
-      uni.reLaunch({ url: '/pages-auth/login/index' })
+      // 延迟一帧，确保路由系统就绪
+      setTimeout(() => uni.reLaunch({ url: '/pages-auth/login/index' }), 0)
+      return
+    }
+    // token 存在时再初始化需要 Pinia 的 store
+    try {
+      const settings = useSettingsStore()
+      settings.initFromStorage()
+      this.applyGlobalSettings(settings)
+    } catch (_) {
+      // Pinia 尚未就绪（极少发生），跳过主题初始化，页面自行处理
     }
   },
 

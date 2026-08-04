@@ -24,7 +24,12 @@
             <text class="iconfont icon-elder"></text>
             <text class="elder-name">{{ rec.elderlyName }}</text>
           </view>
-          <text class="rec-time">{{ rec.createTime }}</text>
+          <view class="rec-actions">
+            <text class="rec-time">{{ rec.createTime }}</text>
+            <view class="delete-btn" @tap.stop="confirmDelete(rec)">
+              <text class="iconfont icon-delete"></text>
+            </view>
+          </view>
         </view>
         <view class="care-tags">
           <text v-for="tag in (rec.careItems || []).slice(0, 3)" :key="tag" class="care-tag">{{ tag }}</text>
@@ -66,7 +71,7 @@
 
 <script>
 import { useSettingsStore } from '../../store/settings'
-import { getCareRecordList, addCareRecord } from '../../api/care'
+import { getCareRecordList, addCareRecord, deleteCareRecord } from '../../api/care'
 import NavBar       from '../../components/NavBar.vue'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 
@@ -102,6 +107,19 @@ export default {
       this.showAddForm = false
       this.newRecord = { elderlyName: '', careItems: '', remark: '' }
       this.loadData()
+    },
+
+    confirmDelete(rec) {
+      uni.showModal({
+        title: '删除确认',
+        content: `确认删除 ${rec.elderlyName} 的这条护理记录？`,
+        success: async ({ confirm }) => {
+          if (!confirm) return
+          await deleteCareRecord(rec.recordId).catch(() => {})
+          this.records = this.records.filter(r => r.recordId !== rec.recordId)
+          uni.showToast({ title: '已删除', icon: 'success' })
+        }
+      })
     }
   }
 }
@@ -143,10 +161,17 @@ export default {
 .rec-remark { font-size: var(--font-sm, 24rpx); color: var(--text-regular); margin-bottom: 8rpx; display: block; }
 .rec-nurse  { font-size: var(--font-xs, 20rpx); color: var(--text-secondary); display: block; }
 
-/* 弹窗 */
-.modal-mask {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000;
-  display: flex; align-items: flex-end;
+.record-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 12rpx;
+  .rec-elder { display: flex; align-items: center; gap: 8rpx; .iconfont { font-size: 30rpx; color: var(--primary-color); } }
+  .elder-name { font-size: var(--font-md, 28rpx); font-weight: 600; color: var(--text-primary); }
+  .rec-actions { display: flex; align-items: center; gap: 12rpx; }
+  .rec-time { font-size: var(--font-xs, 20rpx); color: var(--text-secondary); }
+  .delete-btn {
+    width: 48rpx; height: 48rpx; border-radius: 50%;
+    background: #fef0f0; display: flex; align-items: center; justify-content: center;
+    .iconfont { font-size: 26rpx; color: #f56c6c; }
+  }
 }
 .modal-card {
   width: 100%; background: var(--bg-card); border-radius: 32rpx 32rpx 0 0;

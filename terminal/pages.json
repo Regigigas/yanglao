@@ -120,12 +120,40 @@
           }
         }
       ]
+    },
+    {
+      "root": "pages-purchase",
+      "pages": [
+        {
+          "path": "index/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
+          }
+        },
+        {
+          "path": "apply/index",
+          "style": {
+            "navigationBarTitleText": "新建采购申请",
+            "navigationBarBackgroundColor": "#4A90D9",
+            "navigationBarTextStyle": "white"
+          }
+        },
+        {
+          "path": "detail/index",
+          "style": {
+            "navigationBarTitleText": "采购单详情",
+            "navigationBarBackgroundColor": "#4A90D9",
+            "navigationBarTextStyle": "white"
+          }
+        }
+      ]
     }
   ],
   "preloadRule": {
     "pages/index/index": {
       "network": "all",
-      "packages": ["pages-health", "pages-care", "pages-device", "pages-settings"]
+      "packages": ["pages-auth", "pages-health", "pages-care", "pages-device", "pages-settings", "pages-purchase"]
     }
   },
   "globalStyle": {

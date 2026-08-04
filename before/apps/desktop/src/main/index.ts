@@ -35,6 +35,7 @@ import {
 } from './ipc/task-reminder.handler';
 import { registerAnnouncementHandlers } from './ipc/announcement.handler';
 import { registerOperationsHandlers } from './ipc/operations.handler';
+import { registerPurchaseHandlers } from './ipc/purchase.handler';
 import { registerDbHandlers, readAppConfig } from './ipc/db.handler';
 import { session as authSession } from './ipc/auth.handler';
 import { LanServer } from './lan-server';
@@ -110,12 +111,18 @@ if (gotSingleInstanceLock) {
 }
 
 function createWindow(): void {
+  const iconExtension = process.platform === 'win32' ? 'ico' : 'png';
+  const iconPath = is.dev
+    ? join(__dirname, `../../resources/icon.${iconExtension}`)
+    : join(process.resourcesPath, `icon.${iconExtension}`);
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 960,
     minHeight: 600,
     show: false,
+    icon: iconPath,
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
@@ -183,6 +190,7 @@ registerPermissionGroupHandlers(ipcMain, repos.permissionGroup);
 registerTaskReminderHandlers(ipcMain, repos.taskReminder);
 registerAnnouncementHandlers(ipcMain, repos.announcement);
 registerOperationsHandlers(ipcMain, repos.operations);
+registerPurchaseHandlers(ipcMain, repos.supplier, repos.purchaseOrder);
 registerDbHandlers(ipcMain, defaultDbPath, appConfigPath, () => mainWindow);
 
 // ── 任务提醒：每分钟扫描当前登录用户到期的提醒（闹钟式提醒） ─────────

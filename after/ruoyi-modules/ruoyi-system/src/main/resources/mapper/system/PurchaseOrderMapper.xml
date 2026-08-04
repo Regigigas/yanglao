@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.PurchaseOrderMapper">
+
+    <resultMap id="OrderResult" type="com.ruoyi.system.domain.PurchaseOrder">
+        <id     property="id"           column="id"/>
+        <result property="orderNo"      column="order_no"/>
+        <result property="supplierId"   column="supplier_id"/>
+        <result property="supplierName" column="supplier_name"/>
+        <result property="orderDate"    column="order_date"/>
+        <result property="expectDate"   column="expect_date"/>
+        <result property="totalAmount"  column="total_amount"/>
+        <result property="paidAmount"   column="paid_amount"/>
+        <result property="status"       column="status"/>
+        <result property="applicant"    column="applicant"/>
+        <result property="approver"     column="approver"/>
+        <result property="approvedAt"   column="approved_at"/>
+        <result property="receivedAt"   column="received_at"/>
+        <result property="remark"       column="remark"/>
+        <result property="createBy"     column="create_by"/>
+        <result property="createTime"   column="create_time"/>
+        <result property="updateBy"     column="update_by"/>
+        <result property="updateTime"   column="update_time"/>
+    </resultMap>
+
+    <resultMap id="ItemResult" type="com.ruoyi.system.domain.PurchaseOrderItem">
+        <id     property="id"            column="id"/>
+        <result property="orderId"       column="order_id"/>
+        <result property="itemName"      column="item_name"/>
+        <result property="category"      column="category"/>
+        <result property="specification" column="specification"/>
+        <result property="unit"          column="unit"/>
+        <result property="quantity"      column="quantity"/>
+        <result property="unitPrice"     column="unit_price"/>
+        <result property="amount"        column="amount"/>
+        <result property="receivedQty"   column="received_qty"/>
+        <result property="remark"        column="remark"/>
+        <result property="createTime"    column="create_time"/>
+    </resultMap>
+
+    <sql id="selectOrderVo">
+        SELECT id, order_no, supplier_id, supplier_name, order_date, expect_date,
+               total_amount, paid_amount, status, applicant, approver,
+               approved_at, received_at, remark, create_by, create_time
+        FROM purchase_order WHERE del_flag='0'
+    </sql>
+
+    <!-- 采购单列表 -->
+    <select id="selectOrderList" resultMap="OrderResult">
+        <include refid="selectOrderVo"/>
+        <where>
+            <if test="orderNo != null and orderNo != ''">AND order_no LIKE CONCAT('%',#{orderNo},'%')</if>
+            <if test="supplierName != null and supplierName != ''">AND supplier_name LIKE CONCAT('%',#{supplierName},'%')</if>
+            <if test="status != null and status != ''">AND status = #{status}</if>
+            <if test="applicant != null and applicant != ''">AND applicant = #{applicant}</if>
+        </where>
+        ORDER BY create_time DESC
+    </select>
+
+    <!-- 采购单详情 -->
+    <select id="selectOrderById" resultMap="OrderResult">
+        <include refid="selectOrderVo"/>
+        AND id = #{id}
+    </select>
+
+    <!-- 明细列表 -->
+    <select id="selectItemsByOrderId" resultMap="ItemResult">
+        SELECT id, order_id, item_name, category, specification, unit,
+               quantity, unit_price, amount, received_qty, remark
+        FROM purchase_order_item WHERE order_id = #{orderId}
+    </select>
+
+    <!-- 插入采购单 -->
+    <insert id="insertOrder">
+        INSERT INTO purchase_order(id, order_no, supplier_id, supplier_name, order_date, expect_date,
+                                   total_amount, paid_amount, status, applicant, remark, create_by, create_time)
+        VALUES(#{id}, #{orderNo}, #{supplierId}, #{supplierName}, #{orderDate}, #{expectDate},
+               #{totalAmount}, #{paidAmount}, #{status}, #{applicant}, #{remark}, #{createBy}, NOW())
+    </insert>
+
+    <!-- 更新采购单 -->
+    <update id="updateOrder">
+        UPDATE purchase_order
+        <set>
+            <if test="supplierName != null">supplier_name = #{supplierName},</if>
+            <if test="totalAmount != null">total_amount = #{totalAmount},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="approver != null">approver = #{approver},</if>
+            <if test="approvedAt != null">approved_at = #{approvedAt},</if>
+            <if test="receivedAt != null">received_at = #{receivedAt},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 插入明细 -->
+    <insert id="insertItem">
+        INSERT INTO purchase_order_item(id, order_id, item_name, category, specification,
+                                        unit, quantity, unit_price, amount, received_qty, remark, create_time)
+        VALUES(#{id}, #{orderId}, #{itemName}, #{category}, #{specification},
+               #{unit}, #{quantity}, #{unitPrice}, #{amount}, #{receivedQty}, #{remark}, NOW())
+    </insert>
+
+    <!-- 删除明细 -->
+    <delete id="deleteItemsByOrderId">
+        DELETE FROM purchase_order_item WHERE order_id = #{orderId}
+    </delete>
+
+    <!-- 逻辑删除单条 -->
+    <update id="deleteOrderById">
+        UPDATE purchase_order SET del_flag='2', update_time=NOW() WHERE id = #{id}
+    </update>
+
+    <!-- 批量逻辑删除 -->
+    <update id="deleteOrderByIds">
+        UPDATE purchase_order SET del_flag='2', update_time=NOW()
+        WHERE id IN
+        <foreach collection="array" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </update>
+
+    <!-- 统计 -->
+    <select id="selectStats" resultType="java.util.HashMap">
+        SELECT
+          COUNT(*)                                              AS total,
+          SUM(status='draft')                                   AS draft,
+          SUM(status='pending')                                 AS pending,
+          SUM(status='approved')                                AS approved,
+          SUM(status='received')                                AS received,
+          IFNULL(SUM(total_amount),0)                           AS total_amount
+        FROM purchase_order WHERE del_flag='0'
+    </select>
+</mapper>
