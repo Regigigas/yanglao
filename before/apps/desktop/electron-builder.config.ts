@@ -6,7 +6,7 @@ const hasIcon = (path: string): boolean => existsSync(path)
 const config: Configuration = {
   appId: 'com.yanglao.desktop',
   productName: '养老管理系统',
-  copyright: 'Copyright © 2024',
+  copyright: 'Copyright © 2026',
   directories: {
     buildResources: 'resources',
     output: 'release',
@@ -39,15 +39,18 @@ const config: Configuration = {
 
   win: {
     target: [{ target: 'nsis', arch: ['x64'] }],
+    artifactName: 'yanglao-desktop-${version}-windows-${arch}.${ext}',
     icon: hasIcon('resources/icon.ico') ? 'resources/icon.ico' : undefined,
   },
   mac: {
     target: [{ target: 'dmg', arch: ['x64', 'arm64'] }],
+    artifactName: 'yanglao-desktop-${version}-macos-${arch}.${ext}',
     icon: hasIcon('resources/icon.icns') ? 'resources/icon.icns' : undefined,
     category: 'public.app-category.productivity',
   },
   linux: {
     target: [{ target: 'AppImage', arch: ['x64'] }],
+    artifactName: 'yanglao-desktop-${version}-linux-${arch}.${ext}',
     icon: hasIcon('resources/icon.png') ? 'resources/icon.png' : undefined,
     category: 'Office',
   },
@@ -64,8 +67,12 @@ const config: Configuration = {
     shortcutName: '养老管理系统',
     perMachine: false,
   },
-  // 未配置自动更新服务器时禁用发布，避免 build 时报错
-  publish: null,
+  publish: {
+    provider: 'github',
+    owner: 'Regigigas',
+    repo: 'yanglao',
+    releaseType: 'release',
+  },
 }
 
 export default config

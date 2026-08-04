@@ -1,39 +1,31 @@
-# yanglao
+# 养老管理系统
 
-#### 介绍
-{**以下是 Gitee 平台说明，您可以替换此简介**
-Gitee 是 OSCHINA 推出的基于 Git 的代码托管平台（同时支持 SVN）。专为开发者提供稳定、高效、安全的云端软件开发协作平台
-无论是个人、团队、或是企业，都能够用 Gitee 实现代码托管、项目管理、协作开发。企业项目请看 [https://gitee.com/enterprises](https://gitee.com/enterprises)}
+养老机构管理系统由线上同步服务、Electron 桌面端和 uni-app 终端组成。
 
-#### 软件架构
-软件架构说明
+## 项目结构
 
+| 目录 | 用途 |
+| --- | --- |
+| `after/` | 线上管理端与数据同步服务，基于 RuoYi Cloud、Spring Boot 和 Vue 2 |
+| `before/` | Electron 桌面端，支持 SQLite 离线存储及与线上服务双向同步 |
+| `terminal/` | uni-app 终端应用 |
 
-#### 安装教程
+## 数据同步
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+线上同步接口由 `after` 中的 `ruoyi-system` 服务提供：
 
-#### 使用说明
+- `POST /sync/upload`：接收 Electron 本地变更
+- `POST /sync/download`：按游标返回其他设备的增量变更
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+Electron 在“系统设置 > 数据同步”中配置网关地址和 RuoYi Bearer Token。通过 Nginx 部署时，同步地址通常为 `https://example.com/prod-api`。
 
-#### 参与贡献
+首次部署线上服务需要按顺序导入 `after/sql/` 中的 SQL 文件，并为同步账号分配 `system:sync:upload`、`system:sync:download` 权限。
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+## 发行资产
 
+GitHub Releases 提供以下安装和部署包：
 
-#### 特技
+- `yanglao-desktop-<version>-windows-x64.exe`：Windows Electron 安装包
+- `yanglao-online-<version>.zip`：线上同步服务部署包，包含 Web 静态资源、后端 JAR、SQL 和 Docker 配置
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+Electron 安装版会从本仓库 GitHub Releases 检查新版本。

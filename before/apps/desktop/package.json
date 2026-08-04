@@ -3,14 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "description": "养老管理系统 Electron 桌面端",
+  "author": "Regigigas",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "vue-tsc --noEmit && electron-vite build",
     "preview": "electron-vite preview",
-    "build:win": "pnpm build && electron-builder --win --config electron-builder.config.ts",
-    "build:mac": "pnpm build && electron-builder --mac --config electron-builder.config.ts",
-    "build:linux": "pnpm build && electron-builder --linux --config electron-builder.config.ts",
+    "build:win": "pnpm build && electron-builder --win --config electron-builder.config.ts --publish never",
+    "build:mac": "pnpm build && electron-builder --mac --config electron-builder.config.ts --publish never",
+    "build:linux": "pnpm build && electron-builder --linux --config electron-builder.config.ts --publish never",
     "typecheck": "vue-tsc --noEmit",
     "rebuild": "electron-rebuild -f -w better-sqlite3"
   },
