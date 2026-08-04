@@ -1,0 +1,24 @@
+{
+  "name": "yanglao-terminal",
+  "version": "1.0.0",
+  "description": "养老机构护理终端接入系统 - uni-app",
+  "scripts": {
+    "dev:app": "uni -p app",
+    "dev:h5": "uni --platform h5",
+    "dev:mp-weixin": "uni --platform mp-weixin",
+    "build:app": "uni build -p app",
+    "build:h5": "uni build --platform h5"
+  },
+  "dependencies": {
+    "pinia": "^2.1.7",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "@dcloudio/types": "*",
+    "@dcloudio/uni-app": "*",
+    "@dcloudio/uni-components": "*",
+    "@dcloudio/uni-h5": "*",
+    "typescript": "^5.0.0",
+    "vite": "latest"
+  }
+}

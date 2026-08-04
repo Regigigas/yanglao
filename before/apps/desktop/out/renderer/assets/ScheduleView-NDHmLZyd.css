@@ -1,0 +1,121 @@
+
+.schedule-grid[data-v-08e32f84] {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 900px;
+}
+.schedule-grid th[data-v-08e32f84],
+.schedule-grid td[data-v-08e32f84] {
+  border: 1px solid var(--n-border-color, #e5e7eb);
+  padding: 6px 8px;
+  vertical-align: top;
+}
+.employee-col[data-v-08e32f84] {
+  width: 110px;
+  min-width: 110px;
+  text-align: left;
+  background: rgba(128, 128, 128, 0.04);
+}
+.day-col[data-v-08e32f84] {
+  width: 130px;
+  min-width: 130px;
+  text-align: center;
+}
+.day-cell[data-v-08e32f84] {
+  height: 64px;
+  transition: background 0.15s;
+}
+.day-cell--clickable[data-v-08e32f84] {
+  cursor: pointer;
+}
+.day-cell--clickable[data-v-08e32f84]:hover {
+  background: rgba(44, 95, 138, 0.06);
+}
+.day-cell--selected-col[data-v-08e32f84] {
+  background: rgba(44, 95, 138, 0.05);
+}
+.empty-cell[data-v-08e32f84] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: transparent;
+}
+.day-cell--clickable:hover .add-hint[data-v-08e32f84] {
+  color: #2c5f8a;
+}
+.cell-content[data-v-08e32f84] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.shift-tag[data-v-08e32f84] {
+  display: flex;
+  align-items: center;
+  color: #fff;
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.shift-tag[data-v-08e32f84]:hover {
+  opacity: 0.85;
+}
+
+/* 班次管理弹窗 - 班次列表行 */
+.shift-list[data-v-08e32f84] {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--n-border-color, #e5e7eb);
+  border-radius: 6px;
+}
+.shift-list-row[data-v-08e32f84] {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--n-border-color, #e5e7eb);
+  gap: 6px;
+}
+.shift-list-row[data-v-08e32f84]:last-child { border-bottom: none;
+}
+.shift-edit-inline[data-v-08e32f84] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* 选中的日期列头 */
+.day-col--today[data-v-08e32f84] {
+  background: rgba(64, 158, 255, 0.06);
+}
+.day-col--selected[data-v-08e32f84] {
+  background: rgba(44, 95, 138, 0.12) !important;
+  box-shadow: inset 0 -2px 0 #2c5f8a;
+}
+
+/* 弹窗内日期横幅 */
+.date-banner[data-v-08e32f84] {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: rgba(44, 95, 138, 0.08);
+}
+
+/* 到点提醒区块 */
+.reminder-section[data-v-08e32f84] {
+  margin-top: 8px;
+  border: 1px solid var(--n-border-color, #e5e7eb);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.reminder-section__header[data-v-08e32f84] {
+  cursor: pointer;
+}
+.reminder-section__body[data-v-08e32f84] {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--n-border-color, #e5e7eb);
+}

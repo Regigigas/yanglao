@@ -1,0 +1,17 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "vue.volar",
+    "stylelint.vscode-stylelint",
+    "editorconfig.editorconfig",
+    "lokalise.i18n-ally",
+    "antfu.unocss",
+    "antfu.iconify",
+    "bradlc.vscode-tailwindcss",
+    "mikestead.dotenv",
+    "christian-kohler.path-intellisense",
+    "formulahendry.auto-rename-tag",
+    "streetsidesoftware.code-spell-checker"
+  ]
+}

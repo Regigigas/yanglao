@@ -1,0 +1,140 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationStyle": "custom",
+        "app-plus": {
+          "titleNView": false
+        }
+      }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "pages-auth",
+      "pages": [
+        {
+          "path": "login/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": {
+              "titleNView": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages-health",
+      "pages": [
+        {
+          "path": "monitor/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": {
+              "titleNView": false
+            }
+          }
+        },
+        {
+          "path": "alerts/index",
+          "style": {
+            "navigationBarTitleText": "健康告警",
+            "navigationBarBackgroundColor": "#4A90D9",
+            "navigationBarTextStyle": "white"
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages-care",
+      "pages": [
+        {
+          "path": "tasks/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": {
+              "titleNView": false
+            }
+          }
+        },
+        {
+          "path": "records/index",
+          "style": {
+            "navigationBarTitleText": "护理记录",
+            "navigationBarBackgroundColor": "#4A90D9",
+            "navigationBarTextStyle": "white"
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages-device",
+      "pages": [
+        {
+          "path": "connect/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": {
+              "titleNView": false
+            }
+          }
+        },
+        {
+          "path": "list/index",
+          "style": {
+            "navigationBarTitleText": "设备列表",
+            "navigationBarBackgroundColor": "#4A90D9",
+            "navigationBarTextStyle": "white"
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages-settings",
+      "pages": [
+        {
+          "path": "index/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": {
+              "titleNView": false
+            }
+          }
+        },
+        {
+          "path": "theme/index",
+          "style": {
+            "navigationBarTitleText": "主题换肤",
+            "navigationBarBackgroundColor": "#4A90D9",
+            "navigationBarTextStyle": "white"
+          }
+        },
+        {
+          "path": "font/index",
+          "style": {
+            "navigationBarTitleText": "字体大小",
+            "navigationBarBackgroundColor": "#4A90D9",
+            "navigationBarTextStyle": "white"
+          }
+        }
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/index/index": {
+      "network": "all",
+      "packages": ["pages-health", "pages-care", "pages-device", "pages-settings"]
+    }
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "养老护理终端",
+    "navigationBarBackgroundColor": "#4A90D9",
+    "backgroundColor": "#F5F7FA",
+    "app-plus": {
+      "background": "#F5F7FA"
+    }
+  }
+}

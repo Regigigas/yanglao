@@ -1,0 +1,17 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# 允许以下依赖执行原生模块编译脚本（pnpm 11 默认屏蔽 postinstall 脚本以防供应链攻击）
+# better-sqlite3 是数据库核心依赖，必须允许其构建脚本运行，否则打包后启动即崩溃
+allowBuilds:
+  electron: true
+  better-sqlite3: true
+  '@parcel/watcher': true
+  electron-winstaller: true
+  esbuild: true
+  vue-demi: true
+
+minimumReleaseAgeExclude:
+  - eslint@10.8.0
+  - sass@1.102.0

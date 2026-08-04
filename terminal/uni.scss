@@ -1,0 +1,159 @@
+/* ===== 全局 SCSS 变量与主题系统 ===== */
+
+// ---- 基础颜色 ----
+$primary: var(--primary-color);
+$primary-light: var(--primary-light);
+$danger: #f56c6c;
+$warning: #e6a23c;
+$success: #67c23a;
+$info: #909399;
+
+// ---- 浅色主题（默认） ----
+.theme-light {
+  --primary-color: #4A90D9;
+  --primary-light: #e8f3ff;
+  --primary-dark: #2d6fb5;
+  --bg-page: #F5F7FA;
+  --bg-card: #ffffff;
+  --bg-nav: #4A90D9;
+  --text-primary: #303133;
+  --text-regular: #606266;
+  --text-secondary: #909399;
+  --text-inverse: #ffffff;
+  --border-color: #DCDFE6;
+  --divider-color: #EBEEF5;
+  --shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+  --tabbar-bg: #ffffff;
+  --tabbar-active: #4A90D9;
+  --tabbar-inactive: #999999;
+}
+
+// ---- 深色主题 ----
+.theme-dark {
+  --primary-color: #5a9fd8;
+  --primary-light: #1a2d40;
+  --primary-dark: #7ab8e8;
+  --bg-page: #1a1a2e;
+  --bg-card: #16213e;
+  --bg-nav: #0f3460;
+  --text-primary: #e0e0e0;
+  --text-regular: #b0b0b0;
+  --text-secondary: #808080;
+  --text-inverse: #ffffff;
+  --border-color: #2d3748;
+  --divider-color: #2a2a3e;
+  --shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.3);
+  --tabbar-bg: #16213e;
+  --tabbar-active: #5a9fd8;
+  --tabbar-inactive: #606060;
+}
+
+// ---- 护理绿主题 ----
+.theme-green {
+  --primary-color: #2ecc71;
+  --primary-light: #e8f8f0;
+  --primary-dark: #27ae60;
+  --bg-page: #f0f9f4;
+  --bg-card: #ffffff;
+  --bg-nav: #27ae60;
+  --text-primary: #2c3e50;
+  --text-regular: #546e7a;
+  --text-secondary: #90a4ae;
+  --text-inverse: #ffffff;
+  --border-color: #b2dfdb;
+  --divider-color: #e8f5e9;
+  --shadow: 0 2rpx 12rpx rgba(46, 204, 113, 0.12);
+  --tabbar-bg: #ffffff;
+  --tabbar-active: #2ecc71;
+  --tabbar-inactive: #999999;
+}
+
+// ---- 暖橙主题（适合老年人） ----
+.theme-warm {
+  --primary-color: #e67e22;
+  --primary-light: #fef6ed;
+  --primary-dark: #d35400;
+  --bg-page: #fdf8f3;
+  --bg-card: #ffffff;
+  --bg-nav: #e67e22;
+  --text-primary: #3e2723;
+  --text-regular: #5d4037;
+  --text-secondary: #8d6e63;
+  --text-inverse: #ffffff;
+  --border-color: #ffccbc;
+  --divider-color: #fce4d0;
+  --shadow: 0 2rpx 12rpx rgba(230, 126, 34, 0.12);
+  --tabbar-bg: #fff8f3;
+  --tabbar-active: #e67e22;
+  --tabbar-inactive: #a0887a;
+}
+
+// ---- 字体大小系统 ----
+.font-sm {
+  --font-xs: 20rpx;
+  --font-sm: 22rpx;
+  --font-md: 24rpx;
+  --font-lg: 28rpx;
+  --font-xl: 32rpx;
+  --font-title: 34rpx;
+}
+
+.font-md {
+  --font-xs: 22rpx;
+  --font-sm: 24rpx;
+  --font-md: 28rpx;
+  --font-lg: 32rpx;
+  --font-xl: 36rpx;
+  --font-title: 40rpx;
+}
+
+.font-lg {
+  --font-xs: 26rpx;
+  --font-sm: 28rpx;
+  --font-md: 32rpx;
+  --font-lg: 36rpx;
+  --font-xl: 42rpx;
+  --font-title: 48rpx;
+}
+
+.font-xl {
+  --font-xs: 30rpx;
+  --font-sm: 32rpx;
+  --font-md: 36rpx;
+  --font-lg: 42rpx;
+  --font-xl: 50rpx;
+  --font-title: 56rpx;
+}
+
+// ---- 通用混入 ----
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@mixin card-base {
+  background: var(--bg-card);
+  border-radius: 16rpx;
+  box-shadow: var(--shadow);
+  padding: 24rpx;
+}
+
+@mixin text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ---- 全局重置 ----
+page {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  background-color: var(--bg-page, #F5F7FA);
+  color: var(--text-primary, #303133);
+}

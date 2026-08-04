@@ -1,0 +1,24 @@
+/* apps/desktop/src/renderer/src/assets/iconfont.css
+ * 来源：iconfont.cn 项目 1984259（字体文件放在 renderer/public/iconfont，构建时原样拷贝到输出目录根路径）
+ * 本地仅保留项目实际使用到的图标类，减少冗余体积
+ * 使用方式：<i class="iconfont icon-guanbi" />
+ */
+@font-face {
+  font-family: 'iconfont';
+  src: url('/iconfont/iconfont.woff2') format('woff2'),
+    url('/iconfont/iconfont.woff') format('woff'),
+    url('/iconfont/iconfont.ttf') format('truetype');
+}
+
+.iconfont {
+  font-family: 'iconfont' !important;
+  /* 不强制字号，交由使用处按上下文控制大小（如页签关闭按钮需要更小的尺寸） */
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 关闭（用于 TagsView 页签关闭按钮，字体图标比 UnoCSS mask 图标视觉更醒目） */
+.icon-guanbi:before {
+  content: '\e60a';
+}

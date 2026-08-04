@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# 提交前自动运行 lint-staged（只检查暂存文件，不全量扫描）
+npx lint-staged

@@ -1,0 +1,106 @@
+/* =====================================================
+ * iconfont.css — 养老护理终端图标字体
+ * 字体文件来源：before/apps/desktop/src/renderer/public/iconfont/
+ * iconfont.cn 项目 1984259
+ *
+ * 使用方式：<text class="iconfont icon-home"></text>
+ *
+ * 如需新增图标：前往 https://www.iconfont.cn 项目 1984259
+ * 下载最新字体包后替换 static/iconfont/ 下的三个字体文件
+ * 并在本文件追加新图标的 .icon-xxx:before { content: '\eXXX'; }
+ * ===================================================== */
+
+@font-face {
+  font-family: 'iconfont';
+  src: url('iconfont.woff2') format('woff2'),
+       url('iconfont.woff') format('woff'),
+       url('iconfont.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+.iconfont {
+  font-family: 'iconfont' !important;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- 导航 & 首页 ---- */
+.icon-home::before           { content: "\e600"; } /* 首页 */
+.icon-dashboard::before      { content: "\e601"; } /* 仪表盘 */
+.icon-menu::before           { content: "\e602"; } /* 菜单 */
+.icon-back::before           { content: "\e603"; } /* 返回 */
+.icon-close::before          { content: "\e604"; } /* 关闭 */
+
+/* ---- 健康监测 ---- */
+.icon-heart::before          { content: "\e610"; } /* 心跳/健康 */
+.icon-heartbeat::before      { content: "\e611"; } /* 心率 */
+.icon-blood-pressure::before { content: "\e612"; } /* 血压 */
+.icon-temperature::before    { content: "\e613"; } /* 体温 */
+.icon-oxygen::before         { content: "\e614"; } /* 血氧 */
+.icon-alert::before          { content: "\e615"; } /* 告警 */
+.icon-warning::before        { content: "\e616"; } /* 警告 */
+.icon-monitor::before        { content: "\e617"; } /* 监测 */
+
+/* ---- 护理服务 ---- */
+.icon-care::before           { content: "\e620"; } /* 护理 */
+.icon-task::before           { content: "\e621"; } /* 任务 */
+.icon-record::before         { content: "\e622"; } /* 记录 */
+.icon-medicine::before       { content: "\e623"; } /* 用药 */
+.icon-nurse::before          { content: "\e624"; } /* 护士 */
+.icon-elder::before          { content: "\e625"; } /* 老人 */
+.icon-bed::before            { content: "\e626"; } /* 床位 */
+.icon-checklist::before      { content: "\e627"; } /* 清单 */
+
+/* ---- 设备连接 ---- */
+.icon-device::before         { content: "\e630"; } /* 设备 */
+.icon-bluetooth::before      { content: "\e631"; } /* 蓝牙 */
+.icon-bluetooth-on::before   { content: "\e632"; } /* 蓝牙已连 */
+.icon-wifi::before           { content: "\e633"; } /* WiFi */
+.icon-wifi-on::before        { content: "\e634"; } /* WiFi已连 */
+.icon-link::before           { content: "\e635"; } /* 连接 */
+.icon-unlink::before         { content: "\e636"; } /* 断开 */
+.icon-signal::before         { content: "\e637"; } /* 信号 */
+
+/* ---- 设置 ---- */
+.icon-settings::before       { content: "\e640"; } /* 设置 */
+.icon-theme::before          { content: "\e641"; } /* 主题 */
+.icon-font-size::before      { content: "\e642"; } /* 字体 */
+.icon-about::before          { content: "\e643"; } /* 关于 */
+.icon-help::before           { content: "\e644"; } /* 帮助 */
+.icon-version::before        { content: "\e645"; } /* 版本 */
+
+/* ---- 用户账户 ---- */
+.icon-user::before           { content: "\e650"; } /* 用户 */
+.icon-user-circle::before    { content: "\e651"; } /* 头像 */
+.icon-logout::before         { content: "\e652"; } /* 退出 */
+.icon-lock::before           { content: "\e653"; } /* 锁定 */
+.icon-shield::before         { content: "\e654"; } /* 安全 */
+
+/* ---- 操作 ---- */
+.icon-add::before            { content: "\e660"; } /* 添加 */
+.icon-edit::before           { content: "\e661"; } /* 编辑 */
+.icon-delete::before         { content: "\e662"; } /* 删除 */
+.icon-refresh::before        { content: "\e663"; } /* 刷新 */
+.icon-search::before         { content: "\e664"; } /* 搜索 */
+.icon-filter::before         { content: "\e665"; } /* 筛选 */
+.icon-check::before          { content: "\e666"; } /* 确认 */
+.icon-arrow-right::before    { content: "\e667"; } /* 右箭头 */
+.icon-arrow-down::before     { content: "\e668"; } /* 下箭头 */
+.icon-more::before           { content: "\e669"; } /* 更多 */
+.icon-scan::before           { content: "\e66a"; } /* 扫描 */
+
+/* ---- 状态 ---- */
+.icon-online::before         { content: "\e670"; } /* 在线 */
+.icon-offline::before        { content: "\e671"; } /* 离线 */
+.icon-success::before        { content: "\e672"; } /* 成功 */
+.icon-error::before          { content: "\e673"; } /* 错误 */
+.icon-loading::before        { content: "\e674"; } /* 加载 */
+.icon-time::before           { content: "\e675"; } /* 时间 */
+.icon-calendar::before       { content: "\e676"; } /* 日历 */
+.icon-location::before       { content: "\e677"; } /* 位置 */
+.icon-notification::before   { content: "\e678"; } /* 通知 */
+
+/* ---- 来自 before 项目已确认的图标 ---- */
+.icon-guanbi::before         { content: "\e60a"; } /* 关闭/×（已在字体文件中确认） */
