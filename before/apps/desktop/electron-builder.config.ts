@@ -11,7 +11,7 @@ const config: Configuration = {
     buildResources: 'resources',
     output: 'release',
   },
-  electronDist: 'node_modules/electron/dist',
+  electronDist: process.platform === 'win32' ? 'node_modules/electron/dist' : undefined,
   extraResources: [
     { from: 'resources/icon.ico', to: 'icon.ico' },
     { from: 'resources/icon.png', to: 'icon.png' },
