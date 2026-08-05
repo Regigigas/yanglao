@@ -89,7 +89,8 @@
 <script>
 import { useDeviceStore }   from '../../store/device'
 import { useSettingsStore } from '../../store/settings'
-import { bindDeviceToElderly, unbindDevice, getElderlyList } from '../../api/device'
+import { bindDeviceToElderly, unbindDevice } from '../../api/device'
+import { getElderlyList } from '../../api/health'
 import NavBar from '../../components/NavBar.vue'
 
 export default {

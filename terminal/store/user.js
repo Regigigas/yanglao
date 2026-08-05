@@ -4,6 +4,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { login as apiLogin, logout as apiLogout, getUserInfo } from '../api/auth'
+import { clearLocalChatToken } from '../utils/chat-config'
 
 export const useUserStore = defineStore('user', () => {
   const token    = ref(uni.getStorageSync('yl_token') || '')
@@ -13,6 +14,7 @@ export const useUserStore = defineStore('user', () => {
 
   /** 登录 */
   async function login(username, password) {
+    clearLocalChatToken()
     const res = await apiLogin(username, password)
     // RuoYi 返回 { code: 200, token: 'xxx', ... }
     const accessToken = res.token || res.access_token
@@ -44,6 +46,7 @@ export const useUserStore = defineStore('user', () => {
     perms.value    = []
     uni.removeStorageSync('yl_token')
     uni.removeStorageSync('yl_user')
+    clearLocalChatToken()
   }
 
   /** 从缓存恢复用户信息（应用冷启动时） */

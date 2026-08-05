@@ -1,6 +1,6 @@
 {
   "name": "yanglao-workspace",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "养老管理系统 - Electron + Vue3 monorepo",
   "engines": {
@@ -14,6 +14,8 @@
     "build:mac": "pnpm -F @yanglao/desktop build:mac",
     "build:linux": "pnpm -F @yanglao/desktop build:linux",
     "preview": "pnpm -F @yanglao/desktop preview",
+    "test": "pnpm -r --if-present test",
+    "test:ci": "pnpm -r --if-present test -- --reporter=verbose",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

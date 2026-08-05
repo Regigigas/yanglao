@@ -2,16 +2,32 @@
 // 局域网主机模式 IPC 处理器
 
 import type { IpcMain } from 'electron'
+import type { UserRepo } from '@yanglao/db'
 import type { LanServer } from '../lan-server'
+import { requireActiveUser } from './auth.handler'
 
-export function registerLanHandlers(ipc: IpcMain, lanServer: LanServer): void {
+export function registerLanHandlers(ipc: IpcMain, lanServer: LanServer, userRepo: UserRepo): void {
+  const requireAdministrator = (): void => {
+    if (requireActiveUser(userRepo).role_id !== 'role-admin') throw new Error('仅系统管理员可配置局域网服务')
+  }
+
   // 获取配置和状态
-  ipc.handle('lan:config:get', () => lanServer.getConfig())
-  ipc.handle('lan:status', () => lanServer.getStatus())
-  ipc.handle('lan:ips', () => lanServer.getLanIPs())
+  ipc.handle('lan:config:get', () => {
+    requireAdministrator()
+    return lanServer.getConfig()
+  })
+  ipc.handle('lan:status', () => {
+    requireAdministrator()
+    return lanServer.getStatus()
+  })
+  ipc.handle('lan:ips', () => {
+    requireAdministrator()
+    return lanServer.getLanIPs()
+  })
 
   // 保存配置（不启停服务器）
   ipc.handle('lan:config:save', (_e, cfg: { enabled?: 0|1; port?: number; allow_write?: 0|1; secret?: string | null }) => {
+    requireAdministrator()
     lanServer.saveConfig(cfg)
     return { ok: true }
   })
@@ -19,6 +35,7 @@ export function registerLanHandlers(ipc: IpcMain, lanServer: LanServer): void {
   // 启动主机服务
   ipc.handle('lan:start', async (_e, port?: number) => {
     try {
+      requireAdministrator()
       await lanServer.start(port)
       return { ok: true, status: lanServer.getStatus() }
     } catch (err) {
@@ -28,12 +45,14 @@ export function registerLanHandlers(ipc: IpcMain, lanServer: LanServer): void {
 
   // 停止主机服务
   ipc.handle('lan:stop', () => {
+    requireAdministrator()
     lanServer.stop()
     return { ok: true, status: lanServer.getStatus() }
   })
 
   // 连通性测试（从客户端角度 ping 目标地址）
   ipc.handle('lan:ping', async (_e, url: string) => {
+    requireAdministrator()
     const http = await import('http')
     const https = await import('https')
     return new Promise<{ ok: boolean; latency?: number; error?: string }>(resolve => {

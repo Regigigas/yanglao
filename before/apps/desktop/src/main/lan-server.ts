@@ -5,7 +5,8 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { networkInterfaces } from 'os'
 import type { Database } from 'better-sqlite3'
-import type { IotRepo } from '@yanglao/db'
+import type { ChatRepo, IotRepo } from '@yanglao/db'
+import type { ChatGroupInput, ChatSendInput, ChatUserId } from '@yanglao/core'
 import { nanoid } from 'nanoid'
 import { handleDeviceReport } from './ipc/iot.handler'
 
@@ -20,6 +21,7 @@ const ALLOWED_TABLES = new Set([
   'contract', 'building', 'room', 'bed',
    'task_reminder', 'iot_device_alert', 'announcement',
 ])
+const LAN_CONFIG_FIELDS = new Set(['enabled', 'port', 'allow_write', 'secret'])
 
 interface LanConfigRow {
   id: 1
@@ -40,8 +42,20 @@ export interface LanServerStatus {
 function readJson(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let body = ''
-    req.on('data', chunk => { body += chunk })
+    let size = 0
+    let rejected = false
+    req.on('data', chunk => {
+      if (rejected) return
+      size += Buffer.byteLength(chunk)
+      if (size > 2 * 1024 * 1024) {
+        rejected = true
+        reject(new Error('请求体不能超过 2 MB'))
+        return
+      }
+      body += chunk
+    })
     req.on('end', () => {
+      if (rejected) return
       try { resolve(JSON.parse(body || '{}')) }
       catch { reject(new Error('请求体 JSON 格式错误')) }
     })
@@ -51,7 +65,11 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 
 /** 发送 JSON 响应 */
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Private-Network': 'true',
+  })
   res.end(JSON.stringify(data))
 }
 
@@ -59,7 +77,11 @@ export class LanServer {
   private server: ReturnType<typeof createServer> | null = null
   private currentPort = 7788
 
-  constructor(private db: Database, private iotRepo?: IotRepo) {}
+  constructor(
+    private db: Database,
+    private iotRepo?: IotRepo,
+    private chatRepo?: ChatRepo,
+  ) {}
 
   // ─── 配置读写 ──────────────────────────────────────────────
   getConfig(): LanConfigRow {
@@ -69,10 +91,15 @@ export class LanServer {
   }
 
   saveConfig(cfg: Partial<Omit<LanConfigRow, 'id'>>): void {
-    const fields = Object.keys(cfg)
+    const normalized = { ...cfg }
+    if (Object.prototype.hasOwnProperty.call(normalized, 'secret') && !normalized.secret) {
+      normalized.secret = nanoid(32)
+    }
+    const fields = Object.keys(normalized).filter(field => LAN_CONFIG_FIELDS.has(field))
     if (!fields.length) return
     const sets = [...fields, 'updated_at'].map(f => `${f}=@${f}`).join(',')
-    this.db.prepare(`UPDATE lan_config SET ${sets} WHERE id=1`).run({ ...cfg, updated_at: Date.now() })
+    const values = Object.fromEntries(fields.map(field => [field, normalized[field as keyof typeof normalized]]))
+    this.db.prepare(`UPDATE lan_config SET ${sets} WHERE id=1`).run({ ...values, updated_at: Date.now() })
   }
 
   // ─── 本机局域网 IP ─────────────────────────────────────────
@@ -97,11 +124,17 @@ export class LanServer {
   async start(port?: number): Promise<void> {
     if (this.server?.listening) return
     const cfg = this.getConfig()
+    if (!cfg.secret) {
+      cfg.secret = nanoid(32)
+      this.saveConfig({ secret: cfg.secret })
+    }
     this.currentPort = port ?? cfg.port ?? 7788
 
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => this.handleRequest(req, res))
       this.server.listen(this.currentPort, '0.0.0.0', () => {
+        const address = this.server?.address()
+        if (address && typeof address === 'object') this.currentPort = address.port
         console.info(`[LAN Server] 已启动，端口 ${this.currentPort}`)
         resolve()
       })
@@ -136,46 +169,189 @@ export class LanServer {
   // ─── 请求路由 ──────────────────────────────────────────────
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
     const cfg = this.getConfig()
+    const requestUrl = new URL(req.url ?? '/', 'http://localhost')
+    const pathname = requestUrl.pathname
 
     // OPTIONS 预检
     if (req.method === 'OPTIONS') {
       res.writeHead(204, {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-Secret',
+        'Access-Control-Allow-Methods': 'POST, GET, PUT, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Secret',
+        'Access-Control-Allow-Private-Network': 'true',
       })
       return res.end()
     }
 
-    // 密钥校验（若配置了 secret）
+    if (req.method === 'GET' && pathname === '/ping') {
+      return sendJson(res, 200, { code: 0, message: 'pong', data: { version: '1.0', time: Date.now() } })
+    }
+
+    const requiresSharedSecret = pathname.startsWith('/sync/') || pathname === '/iot/report'
+    if (requiresSharedSecret && !cfg.secret) {
+      return sendJson(res, 503, { code: 503, message: '局域网服务尚未配置访问密钥' })
+    }
+
+    // 配置访问密钥后，所有局域网接口都必须携带密钥。
     if (cfg.secret) {
-      const clientSecret = req.headers['x-secret']
+      const authorization = req.headers.authorization ?? ''
+      const bearerSecret = /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim()
+      const clientSecret = req.headers['x-secret'] || (requiresSharedSecret ? bearerSecret : undefined)
       if (clientSecret !== cfg.secret) {
         return sendJson(res, 401, { code: 401, message: '密钥错误' })
       }
     }
 
-    if (req.method === 'GET' && req.url === '/ping') {
-      return sendJson(res, 200, { code: 0, message: 'pong', data: { version: '1.0', time: Date.now() } })
+    if (pathname.startsWith('/system/chat/') || pathname === '/system/scene/buildings') {
+      void this.handleChatRequest(req, res, requestUrl)
+      return
     }
 
-    if (req.method === 'POST' && req.url === '/sync/upload') {
+    if (req.method === 'POST' && pathname === '/sync/upload') {
       void this.handleUpload(req, res, cfg)
       return
     }
 
-    if (req.method === 'POST' && req.url === '/sync/download') {
+    if (req.method === 'POST' && pathname === '/sync/download') {
       void this.handleDownload(req, res)
       return
     }
 
     // 物联网 WiFi 设备数据上报接口：设备主动 POST { deviceId, elderlyId?, data } 到本机局域网地址
-    if (req.method === 'POST' && req.url === '/iot/report') {
+    if (req.method === 'POST' && pathname === '/iot/report') {
       void this.handleIotReport(req, res)
       return
     }
 
     sendJson(res, 404, { code: 404, message: '接口不存在' })
+  }
+
+  // ─── 本地聊天：复用线上 /system/chat/* 契约 ─────────────────
+  private async handleChatRequest(
+    req: IncomingMessage,
+    res: ServerResponse,
+    requestUrl: URL,
+  ): Promise<void> {
+    if (!this.chatRepo) {
+      sendJson(res, 503, { code: 503, msg: '本地聊天服务未初始化' })
+      return
+    }
+
+    const success = (data: unknown): void => {
+      sendJson(res, 200, { code: 200, msg: '操作成功', data })
+    }
+
+    try {
+      const pathname = requestUrl.pathname
+      if (req.method === 'POST' && pathname === '/system/chat/login') {
+        const body = await readJson(req) as { username?: string; password?: string }
+        const login = this.chatRepo.login(body.username ?? '', body.password ?? '')
+        success({
+          token: login.token,
+          expiresAt: login.expiresAt,
+          user: {
+            userId: login.userId,
+            userName: login.userName,
+            nickName: login.nickName,
+          },
+        })
+        return
+      }
+
+      const authorization = req.headers.authorization ?? ''
+      const match = /^Bearer\s+(.+)$/i.exec(authorization)
+      if (!match?.[1]) {
+        sendJson(res, 401, { code: 401, msg: '请先登录本地聊天' })
+        return
+      }
+      const token = match[1].trim()
+      this.chatRepo.authenticate(token)
+
+      if (req.method === 'GET' && pathname === '/system/scene/buildings') {
+        success({
+          buildings: this.db.prepare(
+            `SELECT id, name, floors FROM building WHERE deleted_at IS NULL ORDER BY sort_order, name`,
+          ).all(),
+          rooms: this.db.prepare(
+            `SELECT id, building_id, floor, room_no, status
+             FROM room WHERE deleted_at IS NULL ORDER BY building_id, floor, room_no`,
+          ).all(),
+          beds: this.db.prepare(
+            `SELECT id, room_id, bed_no, status
+             FROM bed WHERE deleted_at IS NULL ORDER BY room_id, bed_no`,
+          ).all(),
+        })
+        return
+      }
+
+      if (req.method === 'POST' && pathname === '/system/chat/logout') {
+        this.chatRepo.logout(token)
+        success({ ok: true })
+        return
+      }
+      if (req.method === 'GET' && pathname === '/system/chat/me') {
+        success(this.chatRepo.me(token))
+        return
+      }
+      if (req.method === 'GET' && pathname === '/system/chat/contacts') {
+        success(this.chatRepo.contacts(token, requestUrl.searchParams.get('keyword') ?? undefined))
+        return
+      }
+      if (req.method === 'GET' && pathname === '/system/chat/conversations') {
+        success(this.chatRepo.conversations(token))
+        return
+      }
+      if (req.method === 'POST' && pathname === '/system/chat/conversations/direct') {
+        const body = await readJson(req) as { peerUserId?: ChatUserId }
+        success(this.chatRepo.createDirect(token, body.peerUserId ?? ''))
+        return
+      }
+      if (req.method === 'POST' && pathname === '/system/chat/conversations/group') {
+        const body = await readJson(req) as ChatGroupInput
+        success(this.chatRepo.createGroup(token, body))
+        return
+      }
+
+      const messagesMatch = /^\/system\/chat\/conversations\/(\d+)\/messages$/.exec(pathname)
+      if (messagesMatch) {
+        const conversationId = Number(messagesMatch[1])
+        if (req.method === 'GET') {
+          const numberParam = (name: string): number | undefined => {
+            const value = requestUrl.searchParams.get(name)
+            return value ? Number(value) : undefined
+          }
+          success(this.chatRepo.messages(token, {
+            conversationId,
+            afterMessageId: numberParam('afterMessageId'),
+            beforeMessageId: numberParam('beforeMessageId'),
+            limit: numberParam('limit'),
+          }))
+          return
+        }
+        if (req.method === 'POST') {
+          const body = await readJson(req) as Omit<ChatSendInput, 'conversationId'>
+          success(this.chatRepo.send(token, { ...body, conversationId }))
+          return
+        }
+      }
+
+      const readMatch = /^\/system\/chat\/conversations\/(\d+)\/read$/.exec(pathname)
+      if (req.method === 'PUT' && readMatch) {
+        const body = await readJson(req) as { lastReadMessageId?: number }
+        this.chatRepo.markRead(token, Number(readMatch[1]), Number(body.lastReadMessageId))
+        success({ ok: true })
+        return
+      }
+
+      sendJson(res, 404, { code: 404, msg: '聊天接口不存在' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '本地聊天请求失败'
+      const unauthorized = /登录|用户名或密码|账号已停用|聊天权限/.test(message)
+      sendJson(res, unauthorized ? 401 : 400, {
+        code: unauthorized ? 401 : 400,
+        msg: message,
+      })
+    }
   }
 
   // ─── 物联网设备数据上报 ─────────────────────────────────────
@@ -223,26 +399,24 @@ export class LanServer {
 
       const apply = this.db.transaction(() => {
         for (const change of changes) {
-          if (!ALLOWED_TABLES.has(change.tableName)) continue
-          try {
-            this.applyChange(change.tableName, change.operation, change.payload)
-            // 将客户端变更也写入 change_log，其他客户端可以下载
-            this.db.prepare(`
-              INSERT OR IGNORE INTO change_log (id, table_name, record_id, operation, payload, created_at, synced, synced_at)
-              VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-            `).run(
-              change.id ?? nanoid(),
-              change.tableName,
-              change.recordId,
-              change.operation,
-              JSON.stringify(change.payload),
-              change.createdAt ?? Date.now(),
-              Date.now()
-            )
-            applied++
-          } catch (e) {
-            console.warn('[LAN Server] applyChange 失败:', e)
+          if (!ALLOWED_TABLES.has(change.tableName)) {
+            throw new Error(`不允许同步数据表：${change.tableName}`)
           }
+          this.applyChange(change.tableName, change.operation, change.payload)
+          // 将客户端变更也写入 change_log，其他客户端可以下载
+          this.db.prepare(`
+            INSERT OR IGNORE INTO change_log (id, table_name, record_id, operation, payload, created_at, synced, synced_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+          `).run(
+            change.id ?? nanoid(),
+            change.tableName,
+            change.recordId,
+            change.operation,
+            JSON.stringify(change.payload),
+            change.createdAt ?? Date.now(),
+            Date.now()
+          )
+          applied++
         }
       })
       apply()
@@ -290,7 +464,7 @@ export class LanServer {
     operation: 'INSERT' | 'UPDATE' | 'DELETE',
     payload: Record<string, unknown>
   ): void {
-    if (!payload.id) return
+    if (!payload.id) throw new Error(`同步 ${table} 数据缺少 id`)
 
     if (operation === 'DELETE') {
       // 尝试软删除
@@ -308,13 +482,22 @@ export class LanServer {
     }
 
     // INSERT / UPDATE → UPSERT
+    const tableColumns = new Set(
+      (this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(column => column.name),
+    )
     const cols = Object.keys(payload)
-    if (!cols.length) return
+    const invalidColumns = cols.filter(column => !tableColumns.has(column))
+    if (invalidColumns.length) {
+      throw new Error(`数据表 ${table} 包含非法字段：${invalidColumns.join(', ')}`)
+    }
     const placeholders = cols.map(c => `@${c}`).join(', ')
-    const updates = cols.filter(c => c !== 'id').map(c => `${c}=excluded.${c}`).join(', ')
+    const updateColumns = cols.filter(c => c !== 'id')
+    const conflict = updateColumns.length
+      ? `DO UPDATE SET ${updateColumns.map(c => `${c}=excluded.${c}`).join(', ')}`
+      : 'DO NOTHING'
     this.db
       .prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})
-                ON CONFLICT(id) DO UPDATE SET ${updates}`)
+                ON CONFLICT(id) ${conflict}`)
       .run(payload)
   }
 }

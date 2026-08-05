@@ -62,6 +62,12 @@
         <text class="item-label">测试连接</text>
         <text class="item-value" :class="connStatusClass">{{ connStatusText }}</text>
       </view>
+      <view class="setting-item" @tap="goTo('/pages-settings/chat/index')">
+        <text class="iconfont icon-link item-icon" style="color:#1abc9c"></text>
+        <text class="item-label">聊天连接设置</text>
+        <text class="item-value">{{ chatModeLabel }}</text>
+        <text class="iconfont icon-arrow-right item-arrow"></text>
+      </view>
     </view>
 
     <!-- 编辑服务器地址弹窗 -->
@@ -108,10 +114,11 @@
     <!-- 设置分组：关于 -->
     <view class="group-title">关于</view>
     <view class="card group-card">
-      <view class="setting-item">
+      <view class="setting-item" @tap="goTo('/pages-settings/update/index')">
         <text class="iconfont icon-version item-icon" style="color:#909399"></text>
-        <text class="item-label">版本号</text>
-        <text class="item-value">v1.0.0</text>
+        <text class="item-label">软件更新</text>
+        <text class="item-value">v1.1.0</text>
+        <text class="iconfont icon-arrow-right item-arrow"></text>
       </view>
       <view class="setting-item">
         <text class="iconfont icon-about item-icon" style="color:#909399"></text>
@@ -135,6 +142,7 @@ import { useUserStore }     from '../../store/user'
 import { useDeviceStore }   from '../../store/device'
 import { useSettingsStore } from '../../store/settings'
 import { getBaseUrl, setBaseUrl } from '../../api/request'
+import { CHAT_MODE_LOCAL, getChatConfig } from '../../utils/chat-config'
 import NavBar       from '../../components/NavBar.vue'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 
@@ -157,12 +165,14 @@ export default {
       editingUrl:      '',
       currentServerUrl: getBaseUrl(),
       connStatusText:  '点击测试',
-      connStatusClass: ''
+      connStatusClass: '',
+      chatMode: getChatConfig().mode
     }
   },
   computed: {
     themeLabel() { return THEME_LABELS[this.settingsStore.theme] || '浅色' },
     fontLabel()  { return FONT_LABELS[this.settingsStore.fontSize] || '中' },
+    chatModeLabel() { return this.chatMode === CHAT_MODE_LOCAL ? '局域网本地' : '线上服务' },
     userRoleText() {
       return (this.userStore.roles || []).map(r => r.roleName || r).join('、') || '护理人员'
     }
@@ -170,6 +180,7 @@ export default {
   onShow() {
     this.userStore.restoreFromStorage()
     this.currentServerUrl = getBaseUrl()
+    this.chatMode = getChatConfig().mode
   },
   methods: {
     goTo(path) {
@@ -304,6 +315,7 @@ export default {
   width: 100%; background: var(--bg-card);
   border-radius: 32rpx 32rpx 0 0;
   padding: 40rpx 32rpx;
+  box-sizing: border-box;
   padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
 }
 .modal-title-text {

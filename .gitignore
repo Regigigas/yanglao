@@ -4,3 +4,9 @@
 *.lk
 *.zip
 .hbuilderx/
+**/node_modules/
+**/dist/
+**/release/
+**/test-results/
+**/unpackage/
+**/target/

@@ -9,6 +9,7 @@ import { useBuildingStore } from '../../stores/building.store'
 import { ref, h, computed } from 'vue'
 import { usePageRefresh } from '../../composables/usePageRefresh'
 import type { BuildingRow, RoomRow, BedRow } from '@yanglao/db'
+import Building3DViewer from '../../components/Building3DViewer.vue'
 
 const store = useBuildingStore()
 const message = useMessage()
@@ -216,6 +217,15 @@ const statusOptions = [
       <NGi><NCard><div class="text-center"><div class="text-2xl font-bold text-orange-500">{{ store.bedStats.occupied }}</div><div class="text-gray-500 mt-1">占用</div></div></NCard></NGi>
       <NGi><NCard><div class="text-center"><div class="text-2xl font-bold text-red-500">{{ store.bedStats.maintenance }}</div><div class="text-gray-500 mt-1">维修</div></div></NCard></NGi>
     </NGrid>
+
+    <NCard class="mb-4" title="3D 楼栋床位总览">
+      <Building3DViewer
+        v-model="selectedBuildingId"
+        :buildings="store.buildings"
+        :rooms="store.rooms"
+        :beds="store.beds"
+      />
+    </NCard>
 
     <!-- 楼栋管理 -->
     <NCard class="mb-4" title="楼栋管理">

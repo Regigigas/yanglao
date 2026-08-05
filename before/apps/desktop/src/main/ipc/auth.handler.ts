@@ -16,6 +16,18 @@ const REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000
 /** 全局会话状态，供其他 handler（如需要记录 created_by）读取当前操作人 */
 export const session: AuthSession = { user: null }
 
+export function requireActiveUser(userRepo: UserRepo): UserRow {
+  if (!session.user) throw new Error('请先登录')
+  const current = userRepo.findUserById(session.user.id)
+  if (!current || current.status !== 'active' || current.deleted_at !== null) {
+    session.user = null
+    clearPersistedSession()
+    throw new Error('当前账号已停用或不存在，请重新登录')
+  }
+  session.user = current
+  return current
+}
+
 function toSafeUser(user: UserRow) {
   const { password_hash: _h, password_salt: _s, ...safe } = user
   return safe
@@ -42,7 +54,13 @@ export function registerAuthHandlers(ipc: IpcMain, userRepo: UserRepo): void {
   })
 
   ipc.handle('auth:current', () => {
-    if (session.user) return toSafeUser(session.user)
+    if (session.user) {
+      try {
+        return toSafeUser(requireActiveUser(userRepo))
+      } catch {
+        return null
+      }
+    }
     // 内存会话为空（应用刚启动）时，尝试通过本地持久化的"记住登录状态"记录自动恢复
     const persisted = loadPersistedSession()
     if (!persisted) return null

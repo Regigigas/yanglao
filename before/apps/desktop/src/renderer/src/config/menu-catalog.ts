@@ -27,6 +27,7 @@ export const MENU_GROUPS: MenuGroupDef[] = [
   { key: 'attendance', label: '考勤管理' },
   { key: 'iot', label: '物联设备' },
   { key: 'operations', label: '运营与安全' },
+  { key: 'communication', label: '沟通协作' },
   { key: 'task', label: '任务提醒' },
   { key: 'system', label: '系统管理' },
 ];
@@ -145,6 +146,12 @@ export const MENU_CATALOG: MenuCatalogItem[] = [
     label: '运营与安全',
     icon: 'i-ion:shield-outline',
     group: 'operations',
+  },
+  {
+    key: 'chat',
+    label: '消息中心',
+    icon: 'i-ion:chatbubbles-outline',
+    group: 'communication',
   },
 
   {

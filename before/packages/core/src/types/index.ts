@@ -66,3 +66,74 @@ export interface ChangeRecord {
   /** 同步时间戳（ms） */
   syncedAt?: number
 }
+
+// ─── 聊天公共契约 ─────────────────────────────────────────────
+
+/** 聊天数据来源：线上服务或本地 SQLite。 */
+export type ChatMode = 'online' | 'local'
+
+/** 线上用户 ID 为 number，本地 sys_user ID 为 string。 */
+export type ChatUserId = number | string
+
+export interface ChatMe {
+  userId: ChatUserId
+  userName: string
+  nickName?: string
+}
+
+export interface ChatContact {
+  userId: ChatUserId
+  userName: string
+  nickName: string
+  avatar?: string
+  deptName?: string
+}
+
+export interface ChatConversation {
+  conversationId: number
+  type: 'D' | 'G'
+  name: string
+  avatar?: string
+  ownerUserId?: ChatUserId
+  lastMessageId?: number
+  lastMessagePreview?: string
+  lastMessageTime?: string
+  unreadCount: number
+}
+
+export interface ChatMessage {
+  messageId: number
+  conversationId: number
+  senderUserId: ChatUserId
+  senderName: string
+  avatar?: string
+  clientMessageId: string
+  messageType: 'text'
+  content: string
+  createTime: string
+}
+
+export interface ChatLoginResult extends ChatMe {
+  mode: ChatMode
+  token: string
+  expiresAt: string
+}
+
+export interface ChatGroupInput {
+  name: string
+  memberUserIds: ChatUserId[]
+}
+
+export interface ChatMessageQuery {
+  conversationId: number
+  afterMessageId?: number
+  beforeMessageId?: number
+  limit?: number
+}
+
+export interface ChatSendInput {
+  conversationId: number
+  clientMessageId: string
+  messageType?: 'text'
+  content: string
+}

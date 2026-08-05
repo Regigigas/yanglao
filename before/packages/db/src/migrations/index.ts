@@ -1314,6 +1314,101 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 32,
+    description: '为全部角色与权限组开放消息中心菜单',
+    up: (db) => {
+      const addChatMenu = (table: 'sys_role' | 'sys_permission_group'): void => {
+        const rows = db.prepare(`SELECT id, menu_keys FROM ${table}`).all() as Array<{
+          id: string;
+          menu_keys: string;
+        }>;
+        const update = db.prepare(`UPDATE ${table} SET menu_keys = ?, updated_at = ? WHERE id = ?`);
+        for (const row of rows) {
+          let menuKeys: string[] = [];
+          try {
+            menuKeys = JSON.parse(row.menu_keys) as string[];
+          } catch {
+            menuKeys = [];
+          }
+          if (menuKeys.includes('*') || menuKeys.includes('chat')) continue;
+          update.run(JSON.stringify([...menuKeys, 'chat']), Date.now(), row.id);
+        }
+      };
+      addChatMenu('sys_role');
+      addChatMenu('sys_permission_group');
+    },
+  },
+  {
+    version: 33,
+    description: '创建本地聊天会话、成员、消息与会话令牌表',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE chat_conversation (
+          id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+          type                 TEXT    NOT NULL CHECK (type IN ('D', 'G')),
+          direct_key           TEXT    UNIQUE,
+          name                 TEXT,
+          owner_user_id        TEXT,
+          last_message_id      INTEGER,
+          last_message_preview TEXT    NOT NULL DEFAULT '',
+          last_message_at      INTEGER,
+          status               TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+          created_at           INTEGER NOT NULL,
+          updated_at           INTEGER NOT NULL,
+          FOREIGN KEY (owner_user_id) REFERENCES sys_user(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+          CHECK ((type = 'D' AND direct_key IS NOT NULL) OR (type = 'G' AND name IS NOT NULL))
+        );
+
+        CREATE TABLE chat_conversation_member (
+          conversation_id     INTEGER NOT NULL,
+          user_id             TEXT    NOT NULL,
+          role                TEXT    NOT NULL DEFAULT 'M' CHECK (role IN ('O', 'A', 'M')),
+          joined_at           INTEGER NOT NULL,
+          left_at             INTEGER,
+          last_read_message_id INTEGER NOT NULL DEFAULT 0,
+          last_read_at        INTEGER,
+          PRIMARY KEY (conversation_id, user_id),
+          FOREIGN KEY (conversation_id) REFERENCES chat_conversation(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES sys_user(id) ON UPDATE CASCADE ON DELETE RESTRICT
+        );
+
+        CREATE TABLE chat_message (
+          id                INTEGER PRIMARY KEY AUTOINCREMENT,
+          conversation_id   INTEGER NOT NULL,
+          sender_user_id    TEXT    NOT NULL,
+          client_message_id TEXT    NOT NULL,
+          message_type      TEXT    NOT NULL DEFAULT 'text' CHECK (message_type = 'text'),
+          content           TEXT    NOT NULL,
+          created_at        INTEGER NOT NULL,
+          deleted_at        INTEGER,
+          FOREIGN KEY (conversation_id) REFERENCES chat_conversation(id) ON DELETE CASCADE,
+          FOREIGN KEY (sender_user_id) REFERENCES sys_user(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+          UNIQUE (sender_user_id, client_message_id)
+        );
+
+        CREATE TABLE chat_session_token (
+          token_hash   TEXT    PRIMARY KEY,
+          user_id      TEXT    NOT NULL,
+          expires_at   INTEGER NOT NULL,
+          created_at   INTEGER NOT NULL,
+          last_used_at INTEGER NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES sys_user(id) ON UPDATE CASCADE ON DELETE CASCADE
+        );
+
+        CREATE INDEX idx_chat_conversation_last
+          ON chat_conversation(last_message_at DESC, id DESC);
+        CREATE INDEX idx_chat_member_user
+          ON chat_conversation_member(user_id, left_at, conversation_id);
+        CREATE INDEX idx_chat_message_cursor
+          ON chat_message(conversation_id, id);
+        CREATE INDEX idx_chat_token_user
+          ON chat_session_token(user_id, expires_at);
+        CREATE INDEX idx_chat_token_expiry
+          ON chat_session_token(expires_at);
+      `);
+    },
+  },
 ];
 
 /**

@@ -1,24 +1,38 @@
 {
   "name": "yanglao-terminal",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "养老机构护理终端接入系统 - uni-app",
   "scripts": {
-    "dev:app": "uni -p app",
-    "dev:h5": "uni --platform h5",
-    "dev:mp-weixin": "uni --platform mp-weixin",
-    "build:app": "uni build -p app",
-    "build:h5": "uni build --platform h5"
+    "dev:app": "cross-env UNI_INPUT_DIR=. uni -p app",
+    "dev:h5": "cross-env UNI_INPUT_DIR=. uni --platform h5",
+    "dev:mp-weixin": "cross-env UNI_INPUT_DIR=. uni --platform mp-weixin",
+    "build:app": "cross-env UNI_INPUT_DIR=. uni build -p app",
+    "build:h5": "cross-env UNI_INPUT_DIR=. uni build --platform h5",
+    "preview:h5": "http-server dist/build/h5 -a 127.0.0.1 -p 4173 -c-1",
+    "test": "vitest run --config vitest.config.js",
+    "test:watch": "vitest --config vitest.config.js",
+    "test:e2e": "playwright test -c playwright.config.js"
   },
   "dependencies": {
-    "pinia": "^2.1.7",
-    "vue": "^3.4.21"
+    "@dcloudio/uni-app": "3.0.0-alpha-5020320260731001",
+    "@dcloudio/uni-app-plus": "3.0.0-alpha-5020320260731001",
+    "@dcloudio/uni-components": "3.0.0-alpha-5020320260731001",
+    "@dcloudio/uni-h5": "3.0.0-alpha-5020320260731001",
+    "pinia": "2.1.7",
+    "three": "^0.185.1",
+    "vue": "3.4.21"
   },
   "devDependencies": {
-    "@dcloudio/types": "*",
-    "@dcloudio/uni-app": "*",
-    "@dcloudio/uni-components": "*",
-    "@dcloudio/uni-h5": "*",
-    "typescript": "^5.0.0",
-    "vite": "latest"
+    "@playwright/test": "1.54.2",
+    "@dcloudio/types": "3.4.31",
+    "@dcloudio/uni-uts-v1": "3.0.0-alpha-5020320260731001",
+    "@dcloudio/vite-plugin-uni": "3.0.0-alpha-5020320260731001",
+    "@vue/compiler-sfc": "3.4.21",
+    "cross-env": "7.0.3",
+    "http-server": "14.1.1",
+    "sass": "^1.83.4",
+    "typescript": "5.9.3",
+    "vite": "5.2.8",
+    "vitest": "3.2.4"
   }
 }

@@ -9,6 +9,7 @@
   import { useLanStore } from '../../stores/lan.store'
   import { onMounted, ref, computed } from 'vue'
   import { initAutoRefresh } from '../../composables/useAutoRefresh'
+  import DatabaseSafetyPanel from '../../components/DatabaseSafetyPanel.vue'
 
   const { isDark, toggle } = useTheme()
   const lanStore = useLanStore()
@@ -84,6 +85,8 @@
         })
         const res = await lanStore.start(portInput.value)
         if (res.ok) {
+          await lanStore.fetchAll()
+          secretInput.value = lanStore.config?.secret ?? ''
           message.success('局域网主机服务已启动')
         } else {
           message.error(res.error ?? '启动失败')
@@ -103,6 +106,8 @@
       allow_write: allowWrite.value ? 1 : 0,
       secret: secretInput.value || null,
     })
+    await lanStore.fetchAll()
+    secretInput.value = lanStore.config?.secret ?? ''
     message.success('配置已保存')
     if (running.value) {
       message.warning('端口变更需重启主机服务才能生效')
@@ -163,6 +168,11 @@
       <NFormItem label="深色模式">
         <NSwitch :value="isDark" @update:value="toggle" />
       </NFormItem>
+    </NCard>
+
+    <!-- 数据安全与备份 -->
+    <NCard title="数据安全与备份" class="mb-4">
+      <DatabaseSafetyPanel />
     </NCard>
 
     <!-- 数据库文件位置 -->
@@ -281,8 +291,9 @@
           <NSwitch v-model:value="allowWrite" />
           <NText depth="3" class="ml-2 text-xs">关闭后仅允许其他电脑下载数据，不能上传变更</NText>
         </NFormItem>
-        <NFormItem label="访问密钥（可选）">
-          <NInput v-model:value="secretInput" placeholder="留空表示不校验，建议内网环境可留空" style="width: 260px" />
+        <NFormItem label="访问密钥">
+          <NInput v-model:value="secretInput" placeholder="留空启动时自动生成" style="width: 260px" />
+          <NText depth="3" class="ml-2 text-xs">其他电脑请将此密钥填入数据同步的访问令牌</NText>
         </NFormItem>
         <NFormItem>
           <NButton type="primary" @click="handleSaveHostConfig">保存配置</NButton>

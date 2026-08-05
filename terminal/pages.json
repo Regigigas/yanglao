@@ -118,6 +118,23 @@
             "navigationBarBackgroundColor": "#4A90D9",
             "navigationBarTextStyle": "white"
           }
+        },
+        {
+          "path": "update/index",
+          "style": {
+            "navigationBarTitleText": "软件更新",
+            "navigationBarBackgroundColor": "#4A90D9",
+            "navigationBarTextStyle": "white"
+          }
+        },
+        {
+          "path": "chat/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": {
+              "titleNView": false
+            }
+          }
         }
       ]
     },
@@ -148,12 +165,36 @@
           }
         }
       ]
+    },
+    {
+      "root": "pages-chat",
+      "pages": [
+        {
+          "path": "index/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages-scene",
+      "pages": [
+        {
+          "path": "building/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
+          }
+        }
+      ]
     }
   ],
   "preloadRule": {
     "pages/index/index": {
       "network": "all",
-      "packages": ["pages-auth", "pages-health", "pages-care", "pages-device", "pages-settings", "pages-purchase"]
+      "packages": ["pages-auth", "pages-health", "pages-care", "pages-device", "pages-settings", "pages-purchase", "pages-chat", "pages-scene"]
     }
   },
   "globalStyle": {

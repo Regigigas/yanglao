@@ -34,6 +34,7 @@
   import { useAuthStore } from '../../stores/auth.store';
   import { useElderlyStore } from '../../stores/elderly.store';
   import { useOperationsStore } from '../../stores/operations.store';
+  import DatabaseSafetyPanel from '../../components/DatabaseSafetyPanel.vue';
 
   const operationsStore = useOperationsStore();
   const elderlyStore = useElderlyStore();
@@ -399,6 +400,11 @@
       </NTabPane>
       <NTabPane name="alert" tab="健康预警">
         <NCard><BaseTable :columns="alertColumns" :data="operationsStore.healthAlerts" :loading="operationsStore.loading" :pagination="{ pageSize: 12 }" /></NCard>
+      </NTabPane>
+      <NTabPane name="data-safety" tab="数据安全">
+        <NCard>
+          <DatabaseSafetyPanel @synchronized="loadData" />
+        </NCard>
       </NTabPane>
     </NTabs>
 

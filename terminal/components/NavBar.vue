@@ -33,6 +33,7 @@ export default {
   props: {
     title:    { type: String, default: '养老护理终端' },
     showBack: { type: Boolean, default: false },
+    manualBack: { type: Boolean, default: false },
     bgColor:  { type: String, default: 'var(--bg-nav, #4A90D9)' },
     textColor:{ type: String, default: '#ffffff' }
   },
@@ -56,6 +57,7 @@ export default {
   methods: {
     handleBack() {
       this.$emit('back')
+      if (this.manualBack) return
       if (getCurrentPages().length > 1) {
         uni.navigateBack()
       } else {

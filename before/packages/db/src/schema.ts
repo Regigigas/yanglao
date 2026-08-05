@@ -709,6 +709,51 @@ export interface ShiftRow {
   deleted_at: number | null;
 }
 
+// ─── 本地聊天 ─────────────────────────────────────────────────
+
+export interface ChatConversationRow {
+  id: number;
+  type: 'D' | 'G';
+  direct_key: string | null;
+  name: string | null;
+  owner_user_id: string | null;
+  last_message_id: number | null;
+  last_message_preview: string;
+  last_message_at: number | null;
+  status: 'active' | 'disabled';
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ChatConversationMemberRow {
+  conversation_id: number;
+  user_id: string;
+  role: 'O' | 'A' | 'M';
+  joined_at: number;
+  left_at: number | null;
+  last_read_message_id: number;
+  last_read_at: number | null;
+}
+
+export interface ChatMessageRow {
+  id: number;
+  conversation_id: number;
+  sender_user_id: string;
+  client_message_id: string;
+  message_type: 'text';
+  content: string;
+  created_at: number;
+  deleted_at: number | null;
+}
+
+export interface ChatSessionTokenRow {
+  token_hash: string;
+  user_id: string;
+  expires_at: number;
+  created_at: number;
+  last_used_at: number;
+}
+
 export interface WorkShiftRule {
   shift: ShiftRow;
   source: 'schedule' | 'default';

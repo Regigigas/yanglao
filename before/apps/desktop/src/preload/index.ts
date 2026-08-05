@@ -2,9 +2,30 @@
 // 预加载脚本 - 通过 contextBridge 安全暴露 IPC API
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { SyncConfig, SyncStatus } from '@yanglao/core';
+import type {
+  ChatContact,
+  ChatConversation,
+  ChatGroupInput,
+  ChatMe,
+  ChatMessage,
+  ChatMessageQuery,
+  ChatMode,
+  ChatSendInput,
+  ChatUserId,
+  SyncConfig,
+  SyncStatus,
+} from '@yanglao/core';
 import type { SyncEvent } from '@yanglao/sync';
-import type { ShiftRow, TaskReminderRow, WorkShiftRule } from '@yanglao/db';
+import type {
+  BackupInfo,
+  IntegrityResult,
+  LocalSyncResult,
+  ShiftRow,
+  TaskReminderRow,
+  WorkShiftRule,
+} from '@yanglao/db';
+
+export type { ChatContact, ChatConversation, ChatMessage } from '@yanglao/core';
 
 const api = {
   // ── 同步 ────────────────────────────────────────────────────
@@ -346,6 +367,27 @@ const api = {
       ipcRenderer.invoke('announcement:read-users', id),
   },
 
+  chat: {
+    getMode: (): Promise<ChatMode> => ipcRenderer.invoke('chat:mode:get'),
+    setMode: (mode: ChatMode): Promise<{ mode: ChatMode }> =>
+      ipcRenderer.invoke('chat:mode:set', mode),
+    me: (): Promise<ChatMe> => ipcRenderer.invoke('chat:me'),
+    contacts: (keyword?: string): Promise<ChatContact[]> =>
+      ipcRenderer.invoke('chat:contacts', keyword),
+    conversations: (): Promise<ChatConversation[]> =>
+      ipcRenderer.invoke('chat:conversations'),
+    createDirect: (peerUserId: ChatUserId): Promise<number> =>
+      ipcRenderer.invoke('chat:direct:create', peerUserId),
+    createGroup: (input: ChatGroupInput): Promise<number> =>
+      ipcRenderer.invoke('chat:group:create', input),
+    messages: (input: ChatMessageQuery): Promise<ChatMessage[]> =>
+      ipcRenderer.invoke('chat:messages', input),
+    send: (input: ChatSendInput): Promise<ChatMessage> =>
+      ipcRenderer.invoke('chat:message:send', input),
+    markRead: (conversationId: number, lastReadMessageId: number): Promise<void> =>
+      ipcRenderer.invoke('chat:read', { conversationId, lastReadMessageId }),
+  },
+
   // ── 运营与安全闭环 ─────────────────────────────────────────────
   operations: {
     riskSummary: () => ipcRenderer.invoke('operations:risk-summary'),
@@ -576,6 +618,17 @@ const api = {
       ipcRenderer.invoke('db:reset-path'),
     selectPath: (): Promise<{ canceled: boolean; path?: string }> =>
       ipcRenderer.invoke('db:select-path'),
+    createBackup: (): Promise<BackupInfo> => ipcRenderer.invoke('db:backup:create'),
+    listBackups: (): Promise<BackupInfo[]> => ipcRenderer.invoke('db:backup:list'),
+    restoreBackup: (name: string): Promise<{ scheduled: true }> =>
+      ipcRenderer.invoke('db:backup:restore', name),
+    checkIntegrity: (): Promise<IntegrityResult> => ipcRenderer.invoke('db:integrity-check'),
+    syncLocalFile: (): Promise<{ canceled: boolean; result?: LocalSyncResult }> =>
+      ipcRenderer.invoke('db:local-sync:select-and-run'),
+    exportBackup: (name: string): Promise<{ canceled: boolean; path?: string }> =>
+      ipcRenderer.invoke('db:backup:export', name),
+    openBackupDirectory: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('db:backup:open-directory'),
   },
 
   // ── 应用级通用配置（自动刷新间隔等） ───────────────────────────

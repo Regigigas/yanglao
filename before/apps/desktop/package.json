@@ -1,6 +1,6 @@
 {
   "name": "@yanglao/desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "养老管理系统 Electron 桌面端",
   "author": "Regigigas",
@@ -12,6 +12,7 @@
     "build:win": "pnpm build && electron-builder --win --config electron-builder.config.ts --publish never",
     "build:mac": "pnpm build && electron-builder --mac --config electron-builder.config.ts --publish never",
     "build:linux": "pnpm build && electron-builder --linux --config electron-builder.config.ts --publish never",
+    "test": "vitest run",
     "typecheck": "vue-tsc --noEmit",
     "rebuild": "electron-rebuild -f -w better-sqlite3"
   },
@@ -26,7 +27,8 @@
     "electron-log": "5.4.4",
     "electron-updater": "6.8.9",
     "nanoid": "6.0.0",
-    "node-cron": "4.6.0"
+    "node-cron": "4.6.0",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.0",
@@ -35,6 +37,7 @@
     "@tanstack/vue-query": "5.101.4",
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "26.1.1",
+    "@types/three": "^0.185.3",
     "@vitejs/plugin-vue": "6.0.8",
     "@vueuse/core": "14.3.0",
     "@vueuse/motion": "3.0.3",
@@ -50,6 +53,7 @@
     "unocss": "66.7.5",
     "unplugin-auto-import": "21.0.0",
     "unplugin-vue-components": "32.1.0",
+    "vitest": "3.2.4",
     "vue": "3.5.40",
     "vue-echarts": "8.0.1",
     "vue-router": "5.2.0",

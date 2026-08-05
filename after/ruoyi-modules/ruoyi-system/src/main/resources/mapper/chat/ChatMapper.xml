@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.ChatMapper">
+    <select id="selectContacts" resultType="java.util.HashMap">
+        SELECT u.user_id AS userId, u.user_name AS userName, u.nick_name AS nickName,
+               u.avatar, d.dept_name AS deptName
+        FROM sys_user u
+        LEFT JOIN sys_dept d ON d.dept_id = u.dept_id
+        WHERE u.status = '0' AND u.del_flag = '0' AND u.user_id != #{userId}
+          AND EXISTS (
+            SELECT 1 FROM sys_user_role ur
+            JOIN sys_role_menu rm ON rm.role_id = ur.role_id
+            JOIN sys_menu permission_menu ON permission_menu.menu_id = rm.menu_id
+            WHERE ur.user_id = u.user_id AND permission_menu.perms = 'system:chat'
+              AND permission_menu.status = '0'
+          )
+        <if test="keyword != null and keyword != ''">
+            AND (u.user_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR u.nick_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR d.dept_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ${scope.params.dataScope}
+        ORDER BY u.nick_name, u.user_id
+        LIMIT 100
+    </select>
+
+    <select id="countActiveUsers" resultType="int">
+        SELECT COUNT(*) FROM sys_user u
+        LEFT JOIN sys_dept d ON d.dept_id = u.dept_id
+        WHERE u.status = '0' AND u.del_flag = '0'
+          AND EXISTS (
+            SELECT 1 FROM sys_user_role ur
+            JOIN sys_role_menu rm ON rm.role_id = ur.role_id
+            JOIN sys_menu permission_menu ON permission_menu.menu_id = rm.menu_id
+            WHERE ur.user_id = u.user_id AND permission_menu.perms = 'system:chat'
+              AND permission_menu.status = '0'
+          )
+          AND u.user_id IN
+        <foreach collection="userIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ${scope.params.dataScope}
+    </select>
+
+    <select id="countActiveUser" resultType="int">
+        SELECT COUNT(*) FROM sys_user u
+        LEFT JOIN sys_dept d ON d.dept_id = u.dept_id
+        WHERE u.user_id = #{userId} AND u.status = '0' AND u.del_flag = '0'
+          AND EXISTS (
+            SELECT 1 FROM sys_user_role ur
+            JOIN sys_role_menu rm ON rm.role_id = ur.role_id
+            JOIN sys_menu permission_menu ON permission_menu.menu_id = rm.menu_id
+            WHERE ur.user_id = u.user_id AND permission_menu.perms = 'system:chat'
+              AND permission_menu.status = '0'
+          )
+        ${scope.params.dataScope}
+    </select>
+
+    <select id="selectConversations" resultType="java.util.HashMap">
+        SELECT c.conversation_id AS conversationId, c.type,
+               CASE WHEN c.type = 'D' THEN peer.nick_name ELSE c.name END AS name,
+               CASE WHEN c.type = 'D' THEN peer.avatar ELSE '' END AS avatar,
+               c.owner_user_id AS ownerUserId, c.last_message_id AS lastMessageId,
+               c.last_message_preview AS lastMessagePreview, c.last_message_time AS lastMessageTime,
+               (SELECT COUNT(*) FROM chat_message unread
+                WHERE unread.conversation_id = c.conversation_id
+                  AND unread.message_id &gt; COALESCE(cm.last_read_message_id, 0)
+                  AND unread.sender_user_id != #{userId} AND unread.deleted_flag = '0') AS unreadCount
+        FROM chat_conversation_member cm
+        JOIN chat_conversation c ON c.conversation_id = cm.conversation_id AND c.status = '0'
+        LEFT JOIN chat_conversation_member peer_member
+               ON c.type = 'D' AND peer_member.conversation_id = c.conversation_id
+              AND peer_member.user_id != #{userId} AND peer_member.left_at IS NULL
+        LEFT JOIN sys_user peer ON peer.user_id = peer_member.user_id
+        WHERE cm.user_id = #{userId} AND cm.left_at IS NULL
+        ORDER BY COALESCE(c.last_message_time, c.create_time) DESC, c.conversation_id DESC
+    </select>
+
+    <select id="selectDirectConversationId" resultType="long">
+        SELECT conversation_id FROM chat_conversation
+        WHERE direct_key = #{directKey} AND type = 'D' AND status = '0' LIMIT 1
+    </select>
+
+    <insert id="insertConversation" parameterType="com.ruoyi.system.domain.chat.ChatConversation"
+            useGeneratedKeys="true" keyProperty="conversationId">
+        INSERT INTO chat_conversation
+          (type, direct_key, name, owner_user_id, status, create_time, update_time)
+        VALUES
+          (#{type}, #{directKey}, #{name}, #{ownerUserId}, '0', NOW(), NOW())
+    </insert>
+
+    <insert id="insertMember">
+        INSERT INTO chat_conversation_member
+          (conversation_id, user_id, role, joined_at, left_at, last_read_message_id, mute_flag)
+        VALUES (#{conversationId}, #{userId}, #{role}, NOW(), NULL, 0, '0')
+        ON DUPLICATE KEY UPDATE role = VALUES(role), joined_at = NOW(), left_at = NULL
+    </insert>
+
+    <select id="countMembership" resultType="int">
+        SELECT COUNT(*) FROM chat_conversation_member cm
+        JOIN chat_conversation c ON c.conversation_id = cm.conversation_id AND c.status = '0'
+        WHERE cm.conversation_id = #{conversationId} AND cm.user_id = #{userId} AND cm.left_at IS NULL
+    </select>
+
+    <select id="selectMessages" resultType="java.util.HashMap">
+        SELECT m.message_id AS messageId, m.conversation_id AS conversationId,
+               m.sender_user_id AS senderUserId, u.nick_name AS senderName, u.avatar,
+               m.client_message_id AS clientMessageId, m.message_type AS messageType,
+               m.content, m.create_time AS createTime
+        FROM chat_message m
+        JOIN chat_conversation c
+          ON c.conversation_id = m.conversation_id AND c.status = '0'
+        JOIN chat_conversation_member viewer
+          ON viewer.conversation_id = m.conversation_id
+         AND viewer.user_id = #{userId} AND viewer.left_at IS NULL
+        JOIN sys_user u ON u.user_id = m.sender_user_id
+        WHERE m.conversation_id = #{conversationId} AND m.deleted_flag = '0'
+        <if test="afterMessageId != null and afterMessageId &gt; 0">
+            AND m.message_id &gt; #{afterMessageId}
+        </if>
+        <if test="beforeMessageId != null and beforeMessageId &gt; 0">
+            AND m.message_id &lt; #{beforeMessageId}
+        </if>
+        <choose>
+            <when test="afterMessageId != null and afterMessageId &gt; 0">ORDER BY m.message_id ASC</when>
+            <otherwise>ORDER BY m.message_id DESC</otherwise>
+        </choose>
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectMessage" resultType="java.util.HashMap">
+        SELECT m.message_id AS messageId, m.conversation_id AS conversationId,
+               m.sender_user_id AS senderUserId, u.nick_name AS senderName, u.avatar,
+               m.client_message_id AS clientMessageId, m.message_type AS messageType,
+               m.content, m.create_time AS createTime
+        FROM chat_message m
+        JOIN chat_conversation c
+          ON c.conversation_id = m.conversation_id AND c.status = '0'
+        JOIN chat_conversation_member viewer
+          ON viewer.conversation_id = m.conversation_id
+         AND viewer.user_id = #{userId} AND viewer.left_at IS NULL
+        JOIN sys_user u ON u.user_id = m.sender_user_id
+        WHERE m.message_id = #{messageId} AND m.deleted_flag = '0'
+    </select>
+
+    <select id="selectMessageByClientId" resultType="com.ruoyi.system.domain.chat.ChatMessage">
+        SELECT message_id AS messageId, conversation_id AS conversationId,
+               sender_user_id AS senderUserId, client_message_id AS clientMessageId,
+               message_type AS messageType, content, create_time AS createTime
+        FROM chat_message
+        WHERE sender_user_id = #{senderUserId} AND client_message_id = #{clientMessageId}
+        LIMIT 1
+    </select>
+
+    <insert id="insertMessage" parameterType="com.ruoyi.system.domain.chat.ChatMessage"
+            useGeneratedKeys="true" keyProperty="messageId">
+        INSERT INTO chat_message
+          (conversation_id, sender_user_id, client_message_id, message_type, content, create_time, deleted_flag)
+        VALUES
+          (#{conversationId}, #{senderUserId}, #{clientMessageId}, #{messageType}, #{content}, NOW(), '0')
+    </insert>
+
+    <update id="updateConversationLastMessage">
+        UPDATE chat_conversation
+        SET last_message_id = #{messageId}, last_message_preview = #{preview},
+            last_message_time = NOW(), update_time = NOW()
+        WHERE conversation_id = #{conversationId} AND status = '0'
+    </update>
+
+    <select id="countConversationMessage" resultType="int">
+        SELECT COUNT(*) FROM chat_message
+        WHERE conversation_id = #{conversationId} AND message_id = #{messageId} AND deleted_flag = '0'
+    </select>
+
+    <update id="markRead">
+        UPDATE chat_conversation_member
+        SET last_read_message_id = GREATEST(last_read_message_id, #{messageId}), last_read_at = NOW()
+        WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND left_at IS NULL
+    </update>
+</mapper>

@@ -11,6 +11,7 @@ const config: Configuration = {
     buildResources: 'resources',
     output: 'release',
   },
+  electronDist: 'node_modules/electron/dist',
   extraResources: [
     { from: 'resources/icon.ico', to: 'icon.ico' },
     { from: 'resources/icon.png', to: 'icon.png' },

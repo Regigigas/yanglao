@@ -227,6 +227,16 @@ const routes: RouteRecordRaw[] = [
           menuKey: 'operations',
         },
       },
+      {
+        path: 'chat',
+        name: 'Chat',
+        component: () => import('../views/chat/ChatView.vue'),
+        meta: {
+          title: '消息中心',
+          icon: 'i-ion:chatbubbles-outline',
+          menuKey: 'chat',
+        },
+      },
       // ── 系统功能 ──────────────────────────────────
       {
         path: 'user',

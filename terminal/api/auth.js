@@ -2,7 +2,7 @@
  * auth.js — 认证相关 API
  * 对接 RuoYi 后台认证系统
  */
-import { get, post, put } from './request'
+import { del, get, post, put } from './request'
 
 /**
  * 登录
@@ -18,7 +18,7 @@ export function login(username, password, code = '') {
  * 退出登录（通知后台使 token 失效）
  */
 export function logout() {
-  return post('/auth/logout')
+  return del('/auth/logout')
 }
 
 /**

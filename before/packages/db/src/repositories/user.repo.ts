@@ -7,6 +7,9 @@ import { nanoid } from 'nanoid'
 import type { UserRow, RoleRow } from '../schema'
 import { hashPassword, verifyPassword } from '../utils/password'
 
+const ROLE_UPDATE_FIELDS = new Set(['name', 'code', 'menu_keys', 'button_keys', 'remark'])
+const USER_UPDATE_FIELDS = new Set(['real_name', 'phone', 'role_id', 'status', 'must_change_pw', 'remark'])
+
 export class UserRepo {
   constructor(private db: Database) {}
 
@@ -45,10 +48,11 @@ export class UserRepo {
     const role = this.findRoleById(id)
     if (role?.is_system) throw new Error('系统内置角色不允许修改')
     const now = Date.now()
-    const fields = Object.keys(data)
+    const fields = Object.keys(data).filter(field => ROLE_UPDATE_FIELDS.has(field))
     if (!fields.length) return
     const sets = [...fields, 'updated_at'].map(f => `${f}=@${f}`).join(',')
-    this.db.prepare(`UPDATE sys_role SET ${sets} WHERE id=@id`).run({ ...data, updated_at: now, id })
+    const values = Object.fromEntries(fields.map(field => [field, data[field as keyof typeof data]]))
+    this.db.prepare(`UPDATE sys_role SET ${sets} WHERE id=@id`).run({ ...values, updated_at: now, id })
   }
 
   deleteRole(id: string): void {
@@ -121,10 +125,11 @@ export class UserRepo {
       if (data.role_id && data.role_id !== user.role_id) throw new Error('内置管理员账号不允许更换角色')
     }
     const now = Date.now()
-    const fields = Object.keys(data)
+    const fields = Object.keys(data).filter(field => USER_UPDATE_FIELDS.has(field))
     if (!fields.length) return
     const sets = [...fields, 'updated_at'].map(f => `${f}=@${f}`).join(',')
-    this.db.prepare(`UPDATE sys_user SET ${sets} WHERE id=@id`).run({ ...data, updated_at: now, id })
+    const values = Object.fromEntries(fields.map(field => [field, data[field as keyof typeof data]]))
+    this.db.prepare(`UPDATE sys_user SET ${sets} WHERE id=@id`).run({ ...values, updated_at: now, id })
   }
 
   /** 重置/修改密码（管理员重置或用户自己改密均走此方法） */

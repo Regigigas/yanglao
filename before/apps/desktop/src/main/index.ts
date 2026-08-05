@@ -1,12 +1,17 @@
 // apps/desktop/src/main/index.ts
 // Electron 主进程入口
 
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, shell, ipcMain } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import log from 'electron-log';
 import { autoUpdater } from 'electron-updater';
-import { initDatabase, createRepos } from '@yanglao/db';
+import {
+  applyPendingDatabaseRestore,
+  DatabaseBackupService,
+  initDatabase,
+  createRepos,
+} from '@yanglao/db';
 import { SyncEngine } from '@yanglao/sync';
 import { SyncScheduler } from '@yanglao/sync';
 import { registerSyncHandlers } from './ipc/sync.handler';
@@ -37,6 +42,7 @@ import { registerAnnouncementHandlers } from './ipc/announcement.handler';
 import { registerOperationsHandlers } from './ipc/operations.handler';
 import { registerPurchaseHandlers } from './ipc/purchase.handler';
 import { registerDbHandlers, readAppConfig } from './ipc/db.handler';
+import { registerChatHandlers } from './ipc/chat.handler';
 import { session as authSession } from './ipc/auth.handler';
 import { LanServer } from './lan-server';
 import { nanoid } from 'nanoid';
@@ -57,10 +63,22 @@ autoUpdater.logger = log;
 // 支持通过 yanglao-app-config.json 配置自定义数据库文件路径
 const defaultDbPath = join(app.getPath('userData'), 'yanglao.db');
 const appConfigPath = join(app.getPath('userData'), 'yanglao-app-config.json');
+const pendingRestorePath = join(app.getPath('userData'), 'pending-database-restore.json');
+const backupDirectory = join(app.getPath('userData'), 'backups');
 const appConfig = readAppConfig(appConfigPath);
 const dbPath = appConfig.dbPath || defaultDbPath;
+const restoreResult = applyPendingDatabaseRestore({
+  dbPath,
+  backupDirectory,
+  pendingRestorePath,
+});
 const db = initDatabase(dbPath);
 const repos = createRepos(db);
+const backupService = new DatabaseBackupService(db, {
+  dbPath,
+  backupDirectory,
+  importDirectory: join(app.getPath('userData'), 'imports'),
+});
 
 // 设备 ID
 const deviceId = process.env['YANGLAO_DEVICE_ID'] || nanoid();
@@ -97,10 +115,11 @@ scheduler.applyConfig(savedConfig);
 
 // ── 局域网主机服务 ─────────────────────────────────────────────
 // 传入 iot repo，使局域网 HTTP 服务器能接收 WiFi 设备的 /iot/report 数据上报
-const lanServer = new LanServer(db, repos.iot);
+const lanServer = new LanServer(db, repos.iot, repos.chat);
 
 // ── 窗口创建 ──────────────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
+let restoreResultShown = false;
 
 if (gotSingleInstanceLock) {
   app.on('second-instance', () => {
@@ -135,6 +154,28 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow!.show();
+    if (restoreResult && !restoreResultShown) {
+      restoreResultShown = true;
+      if (restoreResult.restored) {
+        void dialog.showMessageBox(mainWindow!, {
+          type: 'info',
+          title: '数据库已恢复',
+          message: `已从 ${restoreResult.name} 恢复本地数据。`,
+          detail: restoreResult.safetyBackup
+            ? `恢复前数据已另存为 ${restoreResult.safetyBackup.name}。`
+            : '',
+        });
+      } else {
+        void dialog.showMessageBox(mainWindow!, {
+          type: 'error',
+          title: '数据库恢复失败',
+          message: restoreResult.error || '数据库备份恢复失败',
+          detail: restoreResult.originalPreserved
+            ? '原数据库未被替换，可以继续使用。'
+            : '自动回滚未完成，请联系技术人员并保留备份目录。',
+        });
+      }
+    }
     // 启动时生成生日提醒
     try {
       repos.notification.generateBirthdayReminders(db);
@@ -181,7 +222,7 @@ registerMealHandlers(ipcMain, repos.meal);
 registerActivityHandlers(ipcMain, repos.activity);
 registerContractHandlers(ipcMain, repos.contract);
 registerNotificationHandlers(ipcMain, repos.notification);
-registerLanHandlers(ipcMain, lanServer);
+registerLanHandlers(ipcMain, lanServer, repos.user);
 registerAuthHandlers(ipcMain, repos.user);
 registerUserHandlers(ipcMain, repos.user);
 registerAttendanceHandlers(ipcMain, repos.attendance);
@@ -191,7 +232,17 @@ registerTaskReminderHandlers(ipcMain, repos.taskReminder);
 registerAnnouncementHandlers(ipcMain, repos.announcement);
 registerOperationsHandlers(ipcMain, repos.operations);
 registerPurchaseHandlers(ipcMain, repos.supplier, repos.purchaseOrder);
-registerDbHandlers(ipcMain, defaultDbPath, appConfigPath, () => mainWindow);
+registerChatHandlers(ipcMain, repos.syncConfig, repos.chat, repos.user, appConfigPath);
+registerDbHandlers(
+  ipcMain,
+  defaultDbPath,
+  appConfigPath,
+  pendingRestorePath,
+  backupService,
+  repos.user,
+  () => mainWindow,
+  () => scheduler.getStatus() === 'syncing',
+);
 
 // ── 任务提醒：每分钟扫描当前登录用户到期的提醒（闹钟式提醒） ─────────
 cron.schedule('* * * * *', () => {

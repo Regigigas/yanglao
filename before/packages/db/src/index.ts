@@ -26,9 +26,11 @@ import { AnnouncementRepo } from './repositories/announcement.repo';
 import { OperationsRepo } from './repositories/operations.repo';
 import { SupplierRepo } from './repositories/supplier.repo';
 import { PurchaseOrderRepo } from './repositories/purchase-order.repo';
+import { ChatRepo } from './repositories/chat.repo';
 
 export * from './schema';
 export * from './migrations/index';
+export * from './backup-service';
 export { ChangeLogRepo } from './repositories/change-log.repo';
 export { SyncConfigRepo } from './repositories/sync-config.repo';
 export { ElderlyRepo } from './repositories/elderly.repo';
@@ -51,6 +53,7 @@ export { AnnouncementRepo } from './repositories/announcement.repo';
 export { OperationsRepo } from './repositories/operations.repo';
 export { SupplierRepo } from './repositories/supplier.repo';
 export { PurchaseOrderRepo } from './repositories/purchase-order.repo';
+export { ChatRepo } from './repositories/chat.repo';
 export { hashPassword, verifyPassword } from './utils/password';
 
 let _db: DatabaseInstance | null = null;
@@ -107,6 +110,7 @@ export function createRepos(db: DatabaseInstance = getDatabase()) {
     operations: new OperationsRepo(db),
     supplier: new SupplierRepo(db),
     purchaseOrder: new PurchaseOrderRepo(db),
+    chat: new ChatRepo(db),
   };
 }
 

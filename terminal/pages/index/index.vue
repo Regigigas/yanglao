@@ -122,6 +122,8 @@ export default {
         { label: '护理记录', icon: 'icon-record',   path: '/pages-care/records/index',    color: '#9b59b6' },
         { label: '设备连接', icon: 'icon-bluetooth',path: '/pages-device/connect/index',  color: '#2ecc71' },
         { label: '设备列表', icon: 'icon-device',   path: '/pages-device/list/index',     color: '#1abc9c' },
+        { label: '3D楼栋',   icon: 'icon-bed',      path: '/pages-scene/building/index',  color: '#3f7f67' },
+        { label: '消息中心', icon: 'icon-notification', path: '/pages-chat/index/index', color: '#3f7f67' },
         { label: '主题换肤', icon: 'icon-theme',    path: '/pages-settings/theme/index',  color: '#f39c12' },
         { label: '系统设置', icon: 'icon-settings', path: '/pages-settings/index/index',  color: '#7f8c8d' }
       ]
