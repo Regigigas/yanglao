@@ -13,13 +13,9 @@ permissions:
 
 jobs:
   build:
-    name: Build macOS ${{ matrix.arch }}
+    name: Build macOS x64 and arm64
     runs-on: macos-14
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64, arm64]
     defaults:
       run:
         working-directory: before
@@ -46,14 +42,14 @@ jobs:
         run: pnpm --filter @yanglao/desktop build
 
       - name: Package DMG
-        run: pnpm --filter @yanglao/desktop exec electron-builder --mac --${{ matrix.arch }} --config electron-builder.config.ts --publish never
+        run: pnpm --filter @yanglao/desktop exec electron-builder --mac --config electron-builder.config.ts --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: yanglao-macos-${{ matrix.arch }}
+          name: yanglao-macos
           path: |
             before/apps/desktop/release/*.dmg
             before/apps/desktop/release/*.dmg.blockmap
@@ -67,9 +63,8 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: yanglao-macos-*
+          name: yanglao-macos
           path: artifacts
-          merge-multiple: true
 
       - name: Upload assets to release
         env:
