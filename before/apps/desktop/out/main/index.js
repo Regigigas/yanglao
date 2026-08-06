@@ -29,12 +29,12 @@ const electronUpdater = require("electron-updater");
 const Database = require("better-sqlite3");
 const nanoid$1 = require("nanoid");
 const crypto = require("crypto");
+const fs = require("fs");
 const axios = require("axios");
 const cron = require("node-cron");
 const node_crypto = require("node:crypto");
 const promises = require("node:fs/promises");
 const node_path = require("node:path");
-const fs = require("fs");
 const http = require("http");
 const os = require("os");
 const ITERATIONS = 1e5;
@@ -1336,6 +1336,98 @@ const migrations = [
         CREATE INDEX IF NOT EXISTS idx_purchase_item_order     ON purchase_order_item(order_id);
       `);
     }
+  },
+  {
+    version: 32,
+    description: "为全部角色与权限组开放消息中心菜单",
+    up: (db2) => {
+      const addChatMenu = (table) => {
+        const rows = db2.prepare(`SELECT id, menu_keys FROM ${table}`).all();
+        const update = db2.prepare(`UPDATE ${table} SET menu_keys = ?, updated_at = ? WHERE id = ?`);
+        for (const row of rows) {
+          let menuKeys = [];
+          try {
+            menuKeys = JSON.parse(row.menu_keys);
+          } catch {
+            menuKeys = [];
+          }
+          if (menuKeys.includes("*") || menuKeys.includes("chat")) continue;
+          update.run(JSON.stringify([...menuKeys, "chat"]), Date.now(), row.id);
+        }
+      };
+      addChatMenu("sys_role");
+      addChatMenu("sys_permission_group");
+    }
+  },
+  {
+    version: 33,
+    description: "创建本地聊天会话、成员、消息与会话令牌表",
+    up: (db2) => {
+      db2.exec(`
+        CREATE TABLE chat_conversation (
+          id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+          type                 TEXT    NOT NULL CHECK (type IN ('D', 'G')),
+          direct_key           TEXT    UNIQUE,
+          name                 TEXT,
+          owner_user_id        TEXT,
+          last_message_id      INTEGER,
+          last_message_preview TEXT    NOT NULL DEFAULT '',
+          last_message_at      INTEGER,
+          status               TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+          created_at           INTEGER NOT NULL,
+          updated_at           INTEGER NOT NULL,
+          FOREIGN KEY (owner_user_id) REFERENCES sys_user(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+          CHECK ((type = 'D' AND direct_key IS NOT NULL) OR (type = 'G' AND name IS NOT NULL))
+        );
+
+        CREATE TABLE chat_conversation_member (
+          conversation_id     INTEGER NOT NULL,
+          user_id             TEXT    NOT NULL,
+          role                TEXT    NOT NULL DEFAULT 'M' CHECK (role IN ('O', 'A', 'M')),
+          joined_at           INTEGER NOT NULL,
+          left_at             INTEGER,
+          last_read_message_id INTEGER NOT NULL DEFAULT 0,
+          last_read_at        INTEGER,
+          PRIMARY KEY (conversation_id, user_id),
+          FOREIGN KEY (conversation_id) REFERENCES chat_conversation(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES sys_user(id) ON UPDATE CASCADE ON DELETE RESTRICT
+        );
+
+        CREATE TABLE chat_message (
+          id                INTEGER PRIMARY KEY AUTOINCREMENT,
+          conversation_id   INTEGER NOT NULL,
+          sender_user_id    TEXT    NOT NULL,
+          client_message_id TEXT    NOT NULL,
+          message_type      TEXT    NOT NULL DEFAULT 'text' CHECK (message_type = 'text'),
+          content           TEXT    NOT NULL,
+          created_at        INTEGER NOT NULL,
+          deleted_at        INTEGER,
+          FOREIGN KEY (conversation_id) REFERENCES chat_conversation(id) ON DELETE CASCADE,
+          FOREIGN KEY (sender_user_id) REFERENCES sys_user(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+          UNIQUE (sender_user_id, client_message_id)
+        );
+
+        CREATE TABLE chat_session_token (
+          token_hash   TEXT    PRIMARY KEY,
+          user_id      TEXT    NOT NULL,
+          expires_at   INTEGER NOT NULL,
+          created_at   INTEGER NOT NULL,
+          last_used_at INTEGER NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES sys_user(id) ON UPDATE CASCADE ON DELETE CASCADE
+        );
+
+        CREATE INDEX idx_chat_conversation_last
+          ON chat_conversation(last_message_at DESC, id DESC);
+        CREATE INDEX idx_chat_member_user
+          ON chat_conversation_member(user_id, left_at, conversation_id);
+        CREATE INDEX idx_chat_message_cursor
+          ON chat_message(conversation_id, id);
+        CREATE INDEX idx_chat_token_user
+          ON chat_session_token(user_id, expires_at);
+        CREATE INDEX idx_chat_token_expiry
+          ON chat_session_token(expires_at);
+      `);
+    }
   }
 ];
 function runMigrations(db2) {
@@ -2560,6 +2652,8 @@ class NotificationRepo {
     }
   }
 }
+const ROLE_UPDATE_FIELDS = /* @__PURE__ */ new Set(["name", "code", "menu_keys", "button_keys", "remark"]);
+const USER_UPDATE_FIELDS = /* @__PURE__ */ new Set(["real_name", "phone", "role_id", "status", "must_change_pw", "remark"]);
 class UserRepo {
   constructor(db2) {
     this.db = db2;
@@ -2593,10 +2687,11 @@ class UserRepo {
     const role = this.findRoleById(id);
     if (role?.is_system) throw new Error("系统内置角色不允许修改");
     const now = Date.now();
-    const fields = Object.keys(data);
+    const fields = Object.keys(data).filter((field) => ROLE_UPDATE_FIELDS.has(field));
     if (!fields.length) return;
     const sets = [...fields, "updated_at"].map((f) => `${f}=@${f}`).join(",");
-    this.db.prepare(`UPDATE sys_role SET ${sets} WHERE id=@id`).run({ ...data, updated_at: now, id });
+    const values = Object.fromEntries(fields.map((field) => [field, data[field]]));
+    this.db.prepare(`UPDATE sys_role SET ${sets} WHERE id=@id`).run({ ...values, updated_at: now, id });
   }
   deleteRole(id) {
     const role = this.findRoleById(id);
@@ -2646,10 +2741,11 @@ class UserRepo {
       if (data.role_id && data.role_id !== user.role_id) throw new Error("内置管理员账号不允许更换角色");
     }
     const now = Date.now();
-    const fields = Object.keys(data);
+    const fields = Object.keys(data).filter((field) => USER_UPDATE_FIELDS.has(field));
     if (!fields.length) return;
     const sets = [...fields, "updated_at"].map((f) => `${f}=@${f}`).join(",");
-    this.db.prepare(`UPDATE sys_user SET ${sets} WHERE id=@id`).run({ ...data, updated_at: now, id });
+    const values = Object.fromEntries(fields.map((field) => [field, data[field]]));
+    this.db.prepare(`UPDATE sys_user SET ${sets} WHERE id=@id`).run({ ...values, updated_at: now, id });
   }
   /** 重置/修改密码（管理员重置或用户自己改密均走此方法） */
   setPassword(id, newPassword, mustChangePw = false) {
@@ -3821,6 +3917,899 @@ class PurchaseOrderRepo {
     `).get();
   }
 }
+const TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1e3;
+const CLIENT_MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+class ChatRepo {
+  constructor(db2) {
+    this.db = db2;
+  }
+  db;
+  login(username, password) {
+    const normalizedUsername = username?.trim() ?? "";
+    if (!normalizedUsername || normalizedUsername.length > 100 || !password || password.length > 256) {
+      throw new Error("用户名或密码错误");
+    }
+    const user = this.db.prepare(
+      `SELECT u.id, u.username, u.password_hash, u.password_salt, u.real_name, u.department, r.menu_keys
+       FROM sys_user u
+       JOIN sys_role r ON r.id = u.role_id
+       WHERE u.username = ? AND u.status = 'active' AND u.deleted_at IS NULL
+         AND r.deleted_at IS NULL`
+    ).get(normalizedUsername);
+    if (!user || !this.hasChatPermission(user.menu_keys) || !verifyPassword(password, user.password_salt, user.password_hash)) {
+      throw new Error("用户名或密码错误，或账号无聊天权限");
+    }
+    return this.issueSession(user);
+  }
+  /** Electron 主进程已完成本地登录时，为当前账号签发聊天会话。 */
+  createSessionForUser(userId) {
+    const normalizedUserId = this.normalizeUserId(userId);
+    if (!normalizedUserId) throw new Error("聊天账号无效");
+    return this.issueSession(this.requireActiveChatUser(
+      normalizedUserId,
+      "账号已停用或无聊天权限"
+    ));
+  }
+  issueSession(user) {
+    const token = crypto.randomBytes(32).toString("base64url");
+    const now = Date.now();
+    const expiresAt = now + TOKEN_LIFETIME_MS;
+    this.db.prepare(
+      `INSERT INTO chat_session_token (token_hash, user_id, expires_at, created_at, last_used_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(this.hashToken(token), user.id, expiresAt, now, now);
+    return {
+      mode: "local",
+      token,
+      expiresAt: this.toIso(expiresAt),
+      userId: user.id,
+      userName: user.username,
+      nickName: user.real_name
+    };
+  }
+  authenticate(token) {
+    return this.toMe(this.requireUser(token));
+  }
+  logout(token) {
+    if (typeof token !== "string" || !token) return;
+    this.db.prepare(`DELETE FROM chat_session_token WHERE token_hash = ?`).run(this.hashToken(token));
+  }
+  me(token) {
+    return this.toMe(this.requireUser(token));
+  }
+  contacts(token, keyword) {
+    const current = this.requireUser(token);
+    const search = keyword?.trim() ?? "";
+    if (search.length > 50) throw new Error("搜索内容不能超过50个字符");
+    const lowered = search.toLocaleLowerCase();
+    const rows = this.db.prepare(
+      `SELECT u.id, u.username, u.password_hash, u.password_salt, u.real_name, u.department, r.menu_keys
+       FROM sys_user u
+       JOIN sys_role r ON r.id = u.role_id
+       WHERE u.status = 'active' AND u.deleted_at IS NULL AND r.deleted_at IS NULL
+         AND u.id != ?
+       ORDER BY u.real_name, u.id`
+    ).all(current.id);
+    return rows.filter((row) => this.hasChatPermission(row.menu_keys)).filter((row) => !lowered || [row.username, row.real_name, row.department ?? ""].some((value) => value.toLocaleLowerCase().includes(lowered))).slice(0, 100).map((row) => ({
+      userId: row.id,
+      userName: row.username,
+      nickName: row.real_name,
+      ...row.department ? { deptName: row.department } : {}
+    }));
+  }
+  conversations(token) {
+    const user = this.requireUser(token);
+    const rows = this.db.prepare(
+      `SELECT c.id AS conversation_id, c.type,
+              CASE WHEN c.type = 'D' THEN COALESCE(peer.real_name, peer.username, '') ELSE c.name END AS name,
+              c.owner_user_id, c.last_message_id, c.last_message_preview, c.last_message_at,
+              (SELECT COUNT(*) FROM chat_message unread
+               WHERE unread.conversation_id = c.id AND unread.deleted_at IS NULL
+                 AND unread.id > cm.last_read_message_id AND unread.sender_user_id != ?) AS unread_count
+       FROM chat_conversation_member cm
+       JOIN chat_conversation c ON c.id = cm.conversation_id AND c.status = 'active'
+       LEFT JOIN chat_conversation_member peer_member
+         ON c.type = 'D' AND peer_member.conversation_id = c.id
+        AND peer_member.user_id != ? AND peer_member.left_at IS NULL
+       LEFT JOIN sys_user peer ON peer.id = peer_member.user_id
+       WHERE cm.user_id = ? AND cm.left_at IS NULL
+       ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC`
+    ).all(user.id, user.id, user.id);
+    return rows.map((row) => ({
+      conversationId: row.conversation_id,
+      type: row.type,
+      name: row.name,
+      ...row.owner_user_id ? { ownerUserId: row.owner_user_id } : {},
+      ...row.last_message_id !== null ? { lastMessageId: row.last_message_id } : {},
+      ...row.last_message_preview ? { lastMessagePreview: row.last_message_preview } : {},
+      ...row.last_message_at !== null ? { lastMessageTime: this.toIso(row.last_message_at) } : {},
+      unreadCount: row.unread_count
+    }));
+  }
+  createDirect(token, peerUserId) {
+    const user = this.requireUser(token);
+    const peerId = this.normalizeUserId(peerUserId);
+    if (!peerId || peerId === user.id) throw new Error("私聊联系人无效");
+    this.requireActiveChatUser(peerId, "联系人不存在、已停用或无聊天权限");
+    const directKey = JSON.stringify([user.id, peerId].sort());
+    return this.db.transaction(() => {
+      this.db.prepare(
+        `INSERT OR IGNORE INTO chat_conversation
+           (type, direct_key, status, created_at, updated_at)
+         VALUES ('D', ?, 'active', ?, ?)`
+      ).run(directKey, Date.now(), Date.now());
+      const conversation = this.db.prepare(
+        `SELECT id FROM chat_conversation WHERE direct_key = ? AND type = 'D' AND status = 'active'`
+      ).get(directKey);
+      if (!conversation) throw new Error("创建私聊失败");
+      const insertMember = this.db.prepare(
+        `INSERT OR IGNORE INTO chat_conversation_member
+           (conversation_id, user_id, role, joined_at) VALUES (?, ?, 'M', ?)`
+      );
+      const now = Date.now();
+      insertMember.run(conversation.id, user.id, now);
+      insertMember.run(conversation.id, peerId, now);
+      return conversation.id;
+    })();
+  }
+  createGroup(token, input) {
+    const owner = this.requireUser(token);
+    const name = input.name?.trim() ?? "";
+    if (!name || name.length > 50) throw new Error("群聊名称长度应为1到50个字符");
+    const memberIds = /* @__PURE__ */ new Set([owner.id]);
+    for (const value of input.memberUserIds ?? []) {
+      const id = this.normalizeUserId(value);
+      if (id) memberIds.add(id);
+    }
+    if (memberIds.size < 3 || memberIds.size > 100) {
+      throw new Error("群聊成员数量应为3到100人");
+    }
+    for (const id of memberIds) {
+      this.requireActiveChatUser(id, "群聊包含不存在、已停用或无聊天权限的用户");
+    }
+    return this.db.transaction(() => {
+      const now = Date.now();
+      const result = this.db.prepare(
+        `INSERT INTO chat_conversation
+           (type, name, owner_user_id, status, created_at, updated_at)
+         VALUES ('G', ?, ?, 'active', ?, ?)`
+      ).run(name, owner.id, now, now);
+      const conversationId = Number(result.lastInsertRowid);
+      const insertMember = this.db.prepare(
+        `INSERT INTO chat_conversation_member
+           (conversation_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)`
+      );
+      for (const id of memberIds) {
+        insertMember.run(conversationId, id, id === owner.id ? "O" : "M", now);
+      }
+      return conversationId;
+    })();
+  }
+  messages(token, query) {
+    const user = this.requireUser(token);
+    const conversationId = this.requirePositiveInteger(query.conversationId, "会话标识无效");
+    this.requireMembership(conversationId, user.id);
+    const after = this.positiveCursor(query.afterMessageId);
+    const before = this.positiveCursor(query.beforeMessageId);
+    const limit = Math.max(1, Math.min(query.limit ?? 50, 100));
+    const conditions = ["m.conversation_id = ?", "m.deleted_at IS NULL"];
+    const params = [conversationId];
+    if (after !== void 0) {
+      conditions.push("m.id > ?");
+      params.push(after);
+    }
+    if (before !== void 0) {
+      conditions.push("m.id < ?");
+      params.push(before);
+    }
+    params.push(limit);
+    const rows = this.db.prepare(
+      `SELECT m.*, u.real_name AS sender_name
+       FROM chat_message m JOIN sys_user u ON u.id = m.sender_user_id
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY m.id ${after !== void 0 ? "ASC" : "DESC"} LIMIT ?`
+    ).all(...params);
+    if (after === void 0) rows.reverse();
+    return rows.map((row) => this.toMessage(row));
+  }
+  send(token, input) {
+    const user = this.requireUser(token);
+    const conversationId = this.requirePositiveInteger(input.conversationId, "会话标识无效");
+    this.requireMembership(conversationId, user.id);
+    if (!CLIENT_MESSAGE_ID_PATTERN.test(input.clientMessageId ?? "")) {
+      throw new Error("客户端消息标识无效");
+    }
+    const type = input.messageType?.trim() || "text";
+    if (type !== "text") throw new Error("当前仅支持文本消息");
+    const content = input.content?.trim() ?? "";
+    if (!content || content.length > 2e3) throw new Error("消息内容长度应为1到2000个字符");
+    return this.db.transaction(() => {
+      const existing = this.findMessageByClientId(user.id, input.clientMessageId);
+      if (existing) {
+        if (existing.conversation_id !== conversationId) {
+          throw new Error("客户端消息标识已用于其他会话");
+        }
+        return this.toMessage(existing);
+      }
+      const now = Date.now();
+      const result = this.db.prepare(
+        `INSERT INTO chat_message
+           (conversation_id, sender_user_id, client_message_id, message_type, content, created_at)
+         VALUES (?, ?, ?, 'text', ?, ?)`
+      ).run(conversationId, user.id, input.clientMessageId, content, now);
+      const messageId = Number(result.lastInsertRowid);
+      const preview = content.replace(/\s+/g, " ").slice(0, 200);
+      this.db.prepare(
+        `UPDATE chat_conversation SET last_message_id = ?, last_message_preview = ?,
+           last_message_at = ?, updated_at = ? WHERE id = ? AND status = 'active'`
+      ).run(messageId, preview, now, now, conversationId);
+      const message = this.findMessageById(messageId);
+      if (!message) throw new Error("发送消息失败");
+      return this.toMessage(message);
+    })();
+  }
+  markRead(token, conversationIdValue, messageIdValue) {
+    const user = this.requireUser(token);
+    const conversationId = this.requirePositiveInteger(conversationIdValue, "已读位置无效");
+    const messageId = this.requirePositiveInteger(messageIdValue, "已读位置无效");
+    this.requireMembership(conversationId, user.id, "已读位置无效");
+    const message = this.db.prepare(
+      `SELECT id FROM chat_message WHERE id = ? AND conversation_id = ? AND deleted_at IS NULL`
+    ).get(messageId, conversationId);
+    if (!message) throw new Error("已读位置无效");
+    this.db.prepare(
+      `UPDATE chat_conversation_member
+       SET last_read_message_id = MAX(last_read_message_id, ?), last_read_at = ?
+       WHERE conversation_id = ? AND user_id = ? AND left_at IS NULL`
+    ).run(messageId, Date.now(), conversationId, user.id);
+  }
+  requireUser(token) {
+    if (typeof token !== "string" || !token) throw new Error("聊天登录已失效，请重新登录");
+    const now = Date.now();
+    const tokenHash = this.hashToken(token);
+    const user = this.db.prepare(
+      `SELECT u.id, u.username, u.password_hash, u.password_salt, u.real_name, u.department, r.menu_keys
+       FROM chat_session_token t
+       JOIN sys_user u ON u.id = t.user_id
+       JOIN sys_role r ON r.id = u.role_id
+       WHERE t.token_hash = ? AND t.expires_at > ?
+         AND u.status = 'active' AND u.deleted_at IS NULL AND r.deleted_at IS NULL`
+    ).get(tokenHash, now);
+    if (!user || !this.hasChatPermission(user.menu_keys)) {
+      this.db.prepare(`DELETE FROM chat_session_token WHERE token_hash = ? OR expires_at <= ?`).run(tokenHash, now);
+      throw new Error("聊天登录已失效，请重新登录");
+    }
+    this.db.prepare(`UPDATE chat_session_token SET last_used_at = ? WHERE token_hash = ?`).run(now, tokenHash);
+    return user;
+  }
+  requireActiveChatUser(userId, message) {
+    const user = this.db.prepare(
+      `SELECT u.id, u.username, u.password_hash, u.password_salt, u.real_name, u.department, r.menu_keys
+       FROM sys_user u JOIN sys_role r ON r.id = u.role_id
+       WHERE u.id = ? AND u.status = 'active' AND u.deleted_at IS NULL AND r.deleted_at IS NULL`
+    ).get(userId);
+    if (!user || !this.hasChatPermission(user.menu_keys)) throw new Error(message);
+    return user;
+  }
+  requireMembership(conversationId, userId, message = "会话不存在或您不是会话成员") {
+    const row = this.db.prepare(
+      `SELECT 1 AS ok FROM chat_conversation_member cm
+       JOIN chat_conversation c ON c.id = cm.conversation_id AND c.status = 'active'
+       WHERE cm.conversation_id = ? AND cm.user_id = ? AND cm.left_at IS NULL`
+    ).get(conversationId, userId);
+    if (!row) throw new Error(message);
+  }
+  findMessageByClientId(userId, clientMessageId) {
+    return this.db.prepare(
+      `SELECT m.*, u.real_name AS sender_name FROM chat_message m
+       JOIN sys_user u ON u.id = m.sender_user_id
+       WHERE m.sender_user_id = ? AND m.client_message_id = ? AND m.deleted_at IS NULL`
+    ).get(userId, clientMessageId);
+  }
+  findMessageById(messageId) {
+    return this.db.prepare(
+      `SELECT m.*, u.real_name AS sender_name FROM chat_message m
+       JOIN sys_user u ON u.id = m.sender_user_id WHERE m.id = ? AND m.deleted_at IS NULL`
+    ).get(messageId);
+  }
+  toMessage(row) {
+    return {
+      messageId: row.id,
+      conversationId: row.conversation_id,
+      senderUserId: row.sender_user_id,
+      senderName: row.sender_name,
+      clientMessageId: row.client_message_id,
+      messageType: "text",
+      content: row.content,
+      createTime: this.toIso(row.created_at)
+    };
+  }
+  toMe(user) {
+    return { userId: user.id, userName: user.username, nickName: user.real_name };
+  }
+  hasChatPermission(value) {
+    try {
+      const keys = JSON.parse(value);
+      return Array.isArray(keys) && (keys.includes("chat") || keys.includes("*"));
+    } catch {
+      return false;
+    }
+  }
+  normalizeUserId(value) {
+    if (typeof value === "number") return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+    const normalized = typeof value === "string" ? value.trim() : "";
+    return normalized && normalized.length <= 128 && /^[A-Za-z0-9_-]+$/.test(normalized) ? normalized : null;
+  }
+  requirePositiveInteger(value, message) {
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error(message);
+    return value;
+  }
+  positiveCursor(value) {
+    return value !== void 0 && Number.isSafeInteger(value) && value > 0 ? value : void 0;
+  }
+  hashToken(token) {
+    return crypto.createHash("sha256").update(token).digest("hex");
+  }
+  toIso(timestamp) {
+    return new Date(timestamp).toISOString();
+  }
+}
+const MAX_IMPORT_FILE_SIZE = 2 * 1024 * 1024 * 1024;
+const MAX_IMPORT_ROW_COUNT = 1e6;
+const MAX_MANAGED_BACKUPS = 30;
+const FUTURE_TIMESTAMP_TOLERANCE = 5 * 60 * 1e3;
+const BACKUP_FILE_PATTERN = /^yanglao-.+\.db$/;
+const IMPORT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const STAGED_IMPORT_FILE_PATTERN = /^[0-9a-f-]{36}\.db(?:-(?:wal|shm))?$/i;
+const SQLITE_EXTENSIONS = /* @__PURE__ */ new Set([".db", ".sqlite", ".sqlite3"]);
+const EXCLUDED_TABLES = /* @__PURE__ */ new Set([
+  "_migrations",
+  "change_log",
+  "sync_config",
+  "sync_history",
+  "lan_config",
+  "sys_role",
+  "sys_user",
+  "sys_permission_group",
+  "chat_conversation",
+  "chat_conversation_member",
+  "chat_message",
+  "chat_session_token"
+]);
+const REMOTE_SYNC_TABLES = /* @__PURE__ */ new Set([
+  "elderly",
+  "family_contact",
+  "health_profile",
+  "vital_signs",
+  "medication_order",
+  "medication_record",
+  "medical_visit",
+  "admission",
+  "leave_record",
+  "discharge",
+  "care_assessment",
+  "care_plan",
+  "care_record",
+  "fee_item",
+  "deposit_record",
+  "monthly_bill",
+  "bill_detail",
+  "payment_record",
+  "meal_menu",
+  "meal_record",
+  "nutrition_plan",
+  "activity",
+  "activity_attendance",
+  "contract",
+  "building",
+  "room",
+  "bed",
+  "task_reminder",
+  "iot_device_alert",
+  "announcement"
+]);
+const LOCAL_ONLY_COLUMNS = {
+  elderly: ["photo_path"],
+  contract: ["file_path"],
+  health_exam_result: ["attachment_path"],
+  elderly_document: ["file_path"]
+};
+const SPECIAL_FRESHNESS_COLUMNS = {
+  announcement_read: ["read_at"],
+  health_alert: ["resolved_at", "opened_at"],
+  iot_device_alert: ["resolved_at", "last_detected_at", "opened_at"],
+  notification: ["read_at", "created_at"]
+};
+function quoteIdentifier$1(value) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+function sqlString(value) {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+function valuesEqual(left, right) {
+  if (Buffer.isBuffer(left) && Buffer.isBuffer(right)) return left.equals(right);
+  return Object.is(left, right);
+}
+function removeDatabaseFiles(filePath) {
+  for (const suffix of ["", "-wal", "-shm"]) fs.rmSync(`${filePath}${suffix}`, { force: true });
+}
+function controlledBackupPath(backupDirectory2, name) {
+  if (typeof name !== "string" || !BACKUP_FILE_PATTERN.test(name)) {
+    throw new Error("备份文件名无效");
+  }
+  const directory = path.resolve(backupDirectory2);
+  const filePath = path.resolve(directory, name);
+  if (path.dirname(filePath).toLowerCase() !== directory.toLowerCase() || !fs.existsSync(filePath)) {
+    throw new Error("备份文件不存在或不在程序受控目录");
+  }
+  const realDirectory = fs.realpathSync(directory).toLowerCase();
+  const realFilePath = fs.realpathSync(filePath);
+  if (path.dirname(realFilePath).toLowerCase() !== realDirectory || !fs.statSync(realFilePath).isFile()) {
+    throw new Error("备份文件不存在或不在程序受控目录");
+  }
+  return realFilePath;
+}
+function validateDatabaseForRestore(filePath) {
+  let database;
+  try {
+    const stats = fs.statSync(filePath);
+    if (!stats.isFile() || stats.size < 100 || stats.size > MAX_IMPORT_FILE_SIZE) {
+      throw new Error("备份文件大小无效或超过 2 GB 限制");
+    }
+    database = new Database(filePath, { readonly: true, fileMustExist: true, timeout: 5e3 });
+    const checkRows = database.pragma("quick_check");
+    const messages = checkRows.map((row) => String(row.quick_check ?? "未知错误"));
+    if (messages.length !== 1 || messages[0] !== "ok") {
+      throw new Error(`数据库完整性检查失败：${messages.join("；")}`);
+    }
+    if (database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_migrations'").get() === void 0) {
+      throw new Error("备份不是养老管理系统数据库：缺少迁移记录");
+    }
+    const records = database.prepare("SELECT version, description FROM _migrations ORDER BY version").all();
+    const supportedVersion = migrations.at(-1)?.version ?? 0;
+    const backupVersion = records.at(-1)?.version;
+    if (!Number.isInteger(backupVersion) || records.length === 0) {
+      throw new Error("无法识别备份的结构版本");
+    }
+    if ((backupVersion ?? 0) > supportedVersion) {
+      throw new Error(`备份结构版本 ${backupVersion} 高于当前支持版本 ${supportedVersion}`);
+    }
+    for (let index = 0; index < records.length; index += 1) {
+      const record = records[index];
+      const supported = migrations[index];
+      if (!supported || record.version !== supported.version || record.description !== supported.description) {
+        throw new Error(`备份迁移记录 v${record.version} 与当前应用不兼容`);
+      }
+    }
+  } finally {
+    database?.close();
+  }
+}
+function snapshotDatabase(sourcePath, targetPath) {
+  let source;
+  try {
+    source = new Database(sourcePath, { readonly: true, fileMustExist: true, timeout: 5e3 });
+    source.exec(`VACUUM INTO ${sqlString(targetPath)}`);
+  } finally {
+    source?.close();
+  }
+}
+function applyPendingDatabaseRestore(options) {
+  const pendingRestorePath2 = path.resolve(options.pendingRestorePath);
+  if (!fs.existsSync(pendingRestorePath2)) return null;
+  const dbPath2 = path.resolve(options.dbPath);
+  const backupDirectory2 = path.resolve(options.backupDirectory);
+  const databaseDirectory = path.dirname(dbPath2);
+  fs.mkdirSync(databaseDirectory, { recursive: true });
+  fs.mkdirSync(backupDirectory2, { recursive: true });
+  const temporaryPath = path.resolve(databaseDirectory, `restore-${crypto.randomUUID()}.db`);
+  const rollbackPath = path.resolve(databaseDirectory, `restore-rollback-${crypto.randomUUID()}.db`);
+  let request;
+  let currentMoved = false;
+  let originalPreserved = fs.existsSync(dbPath2);
+  let safetyBackup;
+  try {
+    request = JSON.parse(fs.readFileSync(pendingRestorePath2, "utf8"));
+    if (!request || typeof request.name !== "string" || typeof request.requestedAt !== "string") {
+      throw new Error("数据库恢复请求无效");
+    }
+    const sourcePath = controlledBackupPath(backupDirectory2, request.name);
+    validateDatabaseForRestore(sourcePath);
+    snapshotDatabase(sourcePath, temporaryPath);
+    validateDatabaseForRestore(temporaryPath);
+    if (fs.existsSync(dbPath2)) {
+      const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+      const safetyName = `yanglao-before-restore-${stamp}-${crypto.randomUUID().slice(0, 8)}.db`;
+      const safetyPath = path.resolve(backupDirectory2, safetyName);
+      snapshotDatabase(dbPath2, safetyPath);
+      validateDatabaseForRestore(safetyPath);
+      const stats = fs.statSync(safetyPath);
+      safetyBackup = {
+        name: safetyName,
+        path: safetyPath,
+        size: stats.size,
+        createdAt: stats.mtime.toISOString()
+      };
+      fs.renameSync(dbPath2, rollbackPath);
+      currentMoved = true;
+    }
+    removeDatabaseFiles(dbPath2);
+    fs.renameSync(temporaryPath, dbPath2);
+    validateDatabaseForRestore(dbPath2);
+    removeDatabaseFiles(rollbackPath);
+    return { restored: true, name: request.name, safetyBackup, originalPreserved: true };
+  } catch (error) {
+    if (currentMoved && fs.existsSync(rollbackPath)) {
+      try {
+        removeDatabaseFiles(dbPath2);
+        fs.renameSync(rollbackPath, dbPath2);
+        validateDatabaseForRestore(dbPath2);
+        originalPreserved = true;
+      } catch (rollbackError) {
+        originalPreserved = false;
+        const reason = rollbackError instanceof Error ? rollbackError.message : "未知错误";
+        return {
+          restored: false,
+          name: request?.name,
+          safetyBackup,
+          originalPreserved,
+          error: `数据库恢复失败，自动回滚也未完成：${reason}`
+        };
+      }
+    }
+    return {
+      restored: false,
+      name: request?.name,
+      safetyBackup,
+      originalPreserved,
+      error: error instanceof Error ? error.message : "数据库备份恢复失败"
+    };
+  } finally {
+    removeDatabaseFiles(temporaryPath);
+    if (!currentMoved || originalPreserved) removeDatabaseFiles(rollbackPath);
+    fs.rmSync(pendingRestorePath2, { force: true });
+  }
+}
+class DatabaseBackupService {
+  constructor(db2, options) {
+    this.db = db2;
+    this.dbPath = path.resolve(options.dbPath);
+    this.backupDirectory = path.resolve(options.backupDirectory);
+    this.importDirectory = path.resolve(options.importDirectory);
+    fs.mkdirSync(this.backupDirectory, { recursive: true });
+    fs.mkdirSync(this.importDirectory, { recursive: true });
+    this.clearStagedImports();
+  }
+  db;
+  backupDirectory;
+  importDirectory;
+  dbPath;
+  createBackup() {
+    this.assertBackupDiskSpace();
+    this.db.pragma("wal_checkpoint(FULL)");
+    const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+    const name = `yanglao-${stamp}-${crypto.randomUUID().slice(0, 8)}.db`;
+    const backupPath = path.resolve(this.backupDirectory, name);
+    this.db.exec(`VACUUM INTO ${sqlString(backupPath)}`);
+    const result = this.backupInfo(name);
+    this.pruneBackups();
+    return result;
+  }
+  listBackups() {
+    return fs.readdirSync(this.backupDirectory).filter((name) => BACKUP_FILE_PATTERN.test(name)).map((name) => this.backupInfo(name)).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+  getBackupPath(name) {
+    return controlledBackupPath(this.backupDirectory, name);
+  }
+  scheduleRestore(name, pendingRestorePath2) {
+    const sourcePath = this.getBackupPath(name);
+    validateDatabaseForRestore(sourcePath);
+    const requestPath = path.resolve(pendingRestorePath2);
+    fs.mkdirSync(path.dirname(requestPath), { recursive: true });
+    const request = { name, requestedAt: (/* @__PURE__ */ new Date()).toISOString() };
+    fs.writeFileSync(requestPath, JSON.stringify(request), { encoding: "utf8", mode: 384 });
+    return { scheduled: true };
+  }
+  integrityCheck() {
+    const rows = this.db.pragma("integrity_check");
+    const messages = rows.map((row) => String(row.integrity_check ?? "未知检查结果"));
+    return {
+      ok: messages.length === 1 && messages[0] === "ok",
+      messages,
+      checkedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+  async stageLocalDataFile(sourcePath) {
+    const resolvedSource = path.resolve(sourcePath);
+    if (!SQLITE_EXTENSIONS.has(path.extname(resolvedSource).toLowerCase())) {
+      throw new Error("只支持 .db、.sqlite 或 .sqlite3 数据文件");
+    }
+    if (resolvedSource.toLowerCase() === this.dbPath.toLowerCase()) {
+      throw new Error("不能同步当前正在使用的数据库文件");
+    }
+    if (!fs.existsSync(resolvedSource)) throw new Error("所选数据文件不存在");
+    const sourceStats = fs.statSync(resolvedSource);
+    if (!sourceStats.isFile() || sourceStats.size < 100 || sourceStats.size > MAX_IMPORT_FILE_SIZE) {
+      throw new Error("数据文件大小无效或超过 2 GB 限制");
+    }
+    this.assertAvailableDiskSpace(resolvedSource, sourceStats.size);
+    const importId = crypto.randomUUID();
+    const stagedPath = this.stagedImportPath(importId);
+    let source;
+    try {
+      source = new Database(resolvedSource, { readonly: true, fileMustExist: true, timeout: 5e3 });
+      await source.backup(stagedPath);
+      return {
+        importId,
+        fileName: this.safeSourceName(path.basename(resolvedSource)),
+        size: fs.statSync(stagedPath).size
+      };
+    } catch (error) {
+      this.discardStagedImport(stagedPath);
+      throw error;
+    } finally {
+      source?.close();
+    }
+  }
+  syncFromStagedFile(importId, requestedSourceName) {
+    const importPath = this.stagedImportPath(importId);
+    const sourceName = this.safeSourceName(requestedSourceName);
+    let imported;
+    try {
+      if (!fs.existsSync(importPath)) throw new Error("待同步的数据文件不存在或已失效，请重新选择");
+      const size = fs.statSync(importPath).size;
+      if (size < 100 || size > MAX_IMPORT_FILE_SIZE) throw new Error("数据文件大小无效或超过 2 GB 限制");
+      imported = new Database(importPath, { readonly: true, fileMustExist: true, timeout: 5e3 });
+      this.validateImportedDatabase(imported);
+      const safetyBackup = this.createBackup();
+      const merged = this.mergeImportedDatabase(imported, sourceName);
+      return {
+        sourceName,
+        ...merged,
+        safetyBackup,
+        synchronizedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+    } finally {
+      try {
+        imported?.close();
+      } finally {
+        this.discardStagedImport(importPath);
+      }
+    }
+  }
+  backupInfo(name) {
+    const backupPath = this.getBackupPathUnchecked(name);
+    const stats = fs.statSync(backupPath);
+    return {
+      name,
+      path: backupPath,
+      size: stats.size,
+      createdAt: stats.mtime.toISOString()
+    };
+  }
+  getBackupPathUnchecked(name) {
+    return path.resolve(this.backupDirectory, name);
+  }
+  assertAvailableDiskSpace(sourcePath, sourceSize) {
+    const walSize = fs.existsSync(`${sourcePath}-wal`) ? fs.statSync(`${sourcePath}-wal`).size : 0;
+    const currentSize = fs.existsSync(this.dbPath) ? fs.statSync(this.dbPath).size : 0;
+    const disk = fs.statfsSync(this.importDirectory);
+    const available = Number(disk.bavail) * Number(disk.bsize);
+    const required = (sourceSize + walSize) * 3 + currentSize * 2 + 256 * 1024 * 1024;
+    if (available < required) {
+      throw new Error("本机可用磁盘空间不足，无法创建同步快照和安全备份");
+    }
+  }
+  validateImportedDatabase(imported) {
+    const checkRows = imported.pragma("quick_check");
+    const checkMessages = checkRows.map((row) => String(row.quick_check ?? "未知错误"));
+    if (checkMessages.length !== 1 || checkMessages[0] !== "ok") {
+      throw new Error(`数据文件完整性检查失败：${checkMessages.join("；")}`);
+    }
+    if (!this.tableExists(imported, "_migrations")) {
+      throw new Error("所选文件不是养老管理系统数据库：缺少迁移记录");
+    }
+    const importedMigrations = imported.prepare("SELECT version, description FROM _migrations ORDER BY version").all();
+    const localMigrationMap = new Map(migrations.map((row) => [row.version, row.description]));
+    const importedVersion = importedMigrations.at(-1)?.version;
+    const localVersion = migrations.at(-1)?.version;
+    if (!Number.isInteger(importedVersion) || !Number.isInteger(localVersion)) {
+      throw new Error("无法识别数据文件的结构版本");
+    }
+    if ((importedVersion ?? 0) > (localVersion ?? 0)) {
+      throw new Error(`数据文件结构版本 ${importedVersion} 高于当前支持版本 ${localVersion}`);
+    }
+    for (const migration of importedMigrations) {
+      if (localMigrationMap.get(migration.version) !== migration.description) {
+        throw new Error(`数据文件迁移记录 v${migration.version} 与当前应用不兼容`);
+      }
+    }
+    let totalRows = 0;
+    for (const table of this.importableTables(imported)) {
+      const row = imported.prepare(`SELECT COUNT(*) AS count FROM ${quoteIdentifier$1(table)}`).get();
+      totalRows += row.count;
+      if (totalRows > MAX_IMPORT_ROW_COUNT) {
+        throw new Error(`数据文件记录数超过 ${MAX_IMPORT_ROW_COUNT} 条限制`);
+      }
+    }
+  }
+  mergeImportedDatabase(imported, sourceName) {
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
+    const tables = [];
+    const importStartedAt = Date.now();
+    const mergeAll = this.db.transaction(() => {
+      this.db.pragma("defer_foreign_keys = ON");
+      for (const table of this.importableTables(imported)) {
+        const result = this.mergeTable(imported, table, importStartedAt);
+        if (result.inserted + result.updated + result.skipped > 0) tables.push(result);
+        inserted += result.inserted;
+        updated += result.updated;
+        skipped += result.skipped;
+      }
+      if (this.tableExists(this.db, "operations_audit_log")) {
+        this.db.prepare(
+          `INSERT INTO operations_audit_log (id, domain, record_id, action, detail, created_at)
+           VALUES (?, 'system', ?, 'local_sync', ?, ?)`
+        ).run(
+          crypto.randomUUID(),
+          crypto.randomUUID(),
+          `${sourceName}；新增 ${inserted}；更新 ${updated}；跳过 ${skipped}`,
+          Date.now()
+        );
+      }
+    });
+    mergeAll();
+    return { inserted, updated, skipped, tables };
+  }
+  mergeTable(imported, table, importStartedAt) {
+    const localColumns = this.tableColumns(this.db, table);
+    const importedColumns = new Set(this.tableColumns(imported, table).map((column) => column.name));
+    const primaryKeys = localColumns.filter((column) => column.pk > 0).sort((left, right) => left.pk - right.pk).map((column) => column.name);
+    if (primaryKeys.length === 0 || primaryKeys.some((column) => !importedColumns.has(column))) {
+      throw new Error(`数据表 ${table} 缺少可识别的主键`);
+    }
+    const commonColumns = localColumns.map((column) => column.name).filter((column) => importedColumns.has(column));
+    const missingRequired = localColumns.filter(
+      (column) => !importedColumns.has(column.name) && column.notnull === 1 && column.dflt_value === null && column.pk === 0
+    );
+    if (missingRequired.length > 0) {
+      throw new Error(`数据表 ${table} 缺少必要字段 ${missingRequired.map((column) => column.name).join("、")}`);
+    }
+    const selectImported = imported.prepare(
+      `SELECT ${commonColumns.map(quoteIdentifier$1).join(", ")} FROM ${quoteIdentifier$1(table)}`
+    );
+    const wherePrimaryKey = primaryKeys.map((column) => `${quoteIdentifier$1(column)} = ?`).join(" AND ");
+    const selectLocal = this.db.prepare(
+      `SELECT * FROM ${quoteIdentifier$1(table)} WHERE ${wherePrimaryKey}`
+    );
+    const insertRow = this.db.prepare(
+      `INSERT INTO ${quoteIdentifier$1(table)} (${commonColumns.map(quoteIdentifier$1).join(", ")})
+       VALUES (${commonColumns.map(() => "?").join(", ")})`
+    );
+    const updateColumns = commonColumns.filter((column) => !primaryKeys.includes(column));
+    const updateRow = updateColumns.length > 0 ? this.db.prepare(
+      `UPDATE ${quoteIdentifier$1(table)}
+         SET ${updateColumns.map((column) => `${quoteIdentifier$1(column)} = ?`).join(", ")}
+         WHERE ${wherePrimaryKey}`
+    ) : null;
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
+    for (const rawRow of selectImported.iterate()) {
+      const row = { ...rawRow };
+      const keyValues = primaryKeys.map((column) => row[column]);
+      if (keyValues.some((value) => value === null || value === void 0 || value === "")) {
+        throw new Error(`数据表 ${table} 包含无效主键`);
+      }
+      const local = selectLocal.get(...keyValues);
+      for (const column of LOCAL_ONLY_COLUMNS[table] ?? []) {
+        if (commonColumns.includes(column)) row[column] = local?.[column] ?? null;
+      }
+      if (!local) {
+        insertRow.run(...commonColumns.map((column) => row[column]));
+        this.enqueueRemoteSync(table, keyValues, row, "INSERT");
+        inserted += 1;
+        continue;
+      }
+      if (commonColumns.every((column) => valuesEqual(local[column], row[column]))) {
+        skipped += 1;
+        continue;
+      }
+      if (!this.importedRowIsNewer(table, commonColumns, row, local, importStartedAt)) {
+        skipped += 1;
+        continue;
+      }
+      if (!updateRow) {
+        skipped += 1;
+        continue;
+      }
+      updateRow.run(
+        ...updateColumns.map((column) => row[column]),
+        ...keyValues
+      );
+      this.enqueueRemoteSync(table, keyValues, row, "UPDATE");
+      updated += 1;
+    }
+    return { table, inserted, updated, skipped };
+  }
+  importedRowIsNewer(table, commonColumns, imported, local, importStartedAt) {
+    const freshnessColumns = commonColumns.includes("updated_at") ? ["updated_at"] : (SPECIAL_FRESHNESS_COLUMNS[table] ?? []).filter((column) => commonColumns.includes(column));
+    if (freshnessColumns.length === 0) return false;
+    const importedAt = this.latestTimestamp(imported, freshnessColumns);
+    const localAt = this.latestTimestamp(local, freshnessColumns);
+    if (!Number.isFinite(importedAt)) throw new Error(`数据表 ${table} 包含无效更新时间`);
+    if (importedAt > importStartedAt + FUTURE_TIMESTAMP_TOLERANCE) {
+      throw new Error(`数据表 ${table} 包含超出本机时间的记录`);
+    }
+    return importedAt > localAt;
+  }
+  latestTimestamp(row, columns) {
+    let result = Number.NEGATIVE_INFINITY;
+    for (const column of columns) {
+      const value = row[column];
+      if (value === null || value === void 0) continue;
+      if (typeof value !== "number" || !Number.isFinite(value)) return Number.NaN;
+      result = Math.max(result, value);
+    }
+    return result;
+  }
+  importableTables(imported) {
+    const importedTables = new Set(
+      imported.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name)
+    );
+    return this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name).filter((name) => !name.startsWith("sqlite_") && !EXCLUDED_TABLES.has(name) && importedTables.has(name));
+  }
+  tableColumns(database, table) {
+    return database.prepare(`PRAGMA table_info(${quoteIdentifier$1(table)})`).all();
+  }
+  tableExists(database, table) {
+    return database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== void 0;
+  }
+  stagedImportPath(importId) {
+    if (!IMPORT_ID_PATTERN.test(importId)) throw new Error("本地同步请求标识无效");
+    return path.resolve(this.importDirectory, `${importId}.db`);
+  }
+  discardStagedImport(importPath) {
+    for (const suffix of ["", "-wal", "-shm"]) fs.rmSync(`${importPath}${suffix}`, { force: true });
+  }
+  clearStagedImports() {
+    for (const name of fs.readdirSync(this.importDirectory)) {
+      if (STAGED_IMPORT_FILE_PATTERN.test(name)) {
+        fs.rmSync(path.resolve(this.importDirectory, name), { force: true });
+      }
+    }
+  }
+  pruneBackups() {
+    for (const backup of this.listBackups().slice(MAX_MANAGED_BACKUPS)) {
+      fs.rmSync(backup.path, { force: true });
+    }
+  }
+  assertBackupDiskSpace() {
+    const currentSize = fs.existsSync(this.dbPath) ? fs.statSync(this.dbPath).size : 0;
+    const disk = fs.statfsSync(this.backupDirectory);
+    const available = Number(disk.bavail) * Number(disk.bsize);
+    const required = currentSize * 2 + 128 * 1024 * 1024;
+    if (available < required) throw new Error("本机可用磁盘空间不足，无法创建数据库备份");
+  }
+  enqueueRemoteSync(table, keyValues, row, operation) {
+    if (!REMOTE_SYNC_TABLES.has(table) || !this.tableExists(this.db, "change_log")) return;
+    const recordId = keyValues.map((value) => String(value)).join(":");
+    if (!recordId || recordId.length > 64) return;
+    const payload = { ...row };
+    for (const column of LOCAL_ONLY_COLUMNS[table] ?? []) delete payload[column];
+    this.db.prepare(
+      `INSERT INTO change_log
+       (id, table_name, record_id, operation, payload, created_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, 0)`
+    ).run(crypto.randomUUID(), table, recordId, operation, JSON.stringify(payload), Date.now());
+  }
+  safeSourceName(value) {
+    const normalized = typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, "").trim() : "";
+    return normalized.slice(0, 200) || "本地 SQLite 数据文件";
+  }
+}
 let _db = null;
 function initDatabase(dbPath2) {
   if (_db) return _db;
@@ -3860,7 +4849,8 @@ function createRepos(db2 = getDatabase()) {
     announcement: new AnnouncementRepo(db2),
     operations: new OperationsRepo(db2),
     supplier: new SupplierRepo(db2),
-    purchaseOrder: new PurchaseOrderRepo(db2)
+    purchaseOrder: new PurchaseOrderRepo(db2),
+    chat: new ChatRepo(db2)
   };
 }
 class SyncEngine {
@@ -8384,50 +9374,6 @@ function registerNotificationHandlers(ipc, repo) {
     return { ok: true };
   });
 }
-function registerLanHandlers(ipc, lanServer2) {
-  ipc.handle("lan:config:get", () => lanServer2.getConfig());
-  ipc.handle("lan:status", () => lanServer2.getStatus());
-  ipc.handle("lan:ips", () => lanServer2.getLanIPs());
-  ipc.handle("lan:config:save", (_e, cfg) => {
-    lanServer2.saveConfig(cfg);
-    return { ok: true };
-  });
-  ipc.handle("lan:start", async (_e, port) => {
-    try {
-      await lanServer2.start(port);
-      return { ok: true, status: lanServer2.getStatus() };
-    } catch (err) {
-      return { ok: false, error: String(err) };
-    }
-  });
-  ipc.handle("lan:stop", () => {
-    lanServer2.stop();
-    return { ok: true, status: lanServer2.getStatus() };
-  });
-  ipc.handle("lan:ping", async (_e, url) => {
-    const http2 = await import("http");
-    const https = await import("https");
-    return new Promise((resolve) => {
-      const startAt = Date.now();
-      const mod = url.startsWith("https") ? https : http2;
-      const timeout = setTimeout(() => resolve({ ok: false, error: "连接超时（5s）" }), 5e3);
-      const req = mod.get(`${url.replace(/\/$/, "")}/ping`, (res) => {
-        clearTimeout(timeout);
-        const latency = Date.now() - startAt;
-        if (res.statusCode === 200) {
-          resolve({ ok: true, latency });
-        } else {
-          resolve({ ok: false, error: `HTTP ${res.statusCode}` });
-        }
-        res.resume();
-      });
-      req.on("error", (err) => {
-        clearTimeout(timeout);
-        resolve({ ok: false, error: err.message });
-      });
-    });
-  });
-}
 function sessionFilePath() {
   return path.join(electron.app.getPath("userData"), "session.json");
 }
@@ -8461,6 +9407,17 @@ function clearPersistedSession() {
 }
 const REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1e3;
 const session = { user: null };
+function requireActiveUser(userRepo) {
+  if (!session.user) throw new Error("请先登录");
+  const current = userRepo.findUserById(session.user.id);
+  if (!current || current.status !== "active" || current.deleted_at !== null) {
+    session.user = null;
+    clearPersistedSession();
+    throw new Error("当前账号已停用或不存在，请重新登录");
+  }
+  session.user = current;
+  return current;
+}
 function toSafeUser$1(user) {
   const { password_hash: _h, password_salt: _s, ...safe } = user;
   return safe;
@@ -8484,7 +9441,13 @@ function registerAuthHandlers(ipc, userRepo) {
     return { ok: true };
   });
   ipc.handle("auth:current", () => {
-    if (session.user) return toSafeUser$1(session.user);
+    if (session.user) {
+      try {
+        return toSafeUser$1(requireActiveUser(userRepo));
+      } catch {
+        return null;
+      }
+    }
     const persisted = loadPersistedSession();
     if (!persisted) return null;
     const user = userRepo.findUserById(persisted.userId);
@@ -8504,14 +9467,123 @@ function registerAuthHandlers(ipc, userRepo) {
     return { ok: true };
   });
 }
+function registerLanHandlers(ipc, lanServer2, userRepo) {
+  const requireAdministrator2 = () => {
+    if (requireActiveUser(userRepo).role_id !== "role-admin") throw new Error("仅系统管理员可配置局域网服务");
+  };
+  ipc.handle("lan:config:get", () => {
+    requireAdministrator2();
+    return lanServer2.getConfig();
+  });
+  ipc.handle("lan:status", () => {
+    requireAdministrator2();
+    return lanServer2.getStatus();
+  });
+  ipc.handle("lan:ips", () => {
+    requireAdministrator2();
+    return lanServer2.getLanIPs();
+  });
+  ipc.handle("lan:config:save", (_e, cfg) => {
+    requireAdministrator2();
+    lanServer2.saveConfig(cfg);
+    return { ok: true };
+  });
+  ipc.handle("lan:start", async (_e, port) => {
+    try {
+      requireAdministrator2();
+      await lanServer2.start(port);
+      return { ok: true, status: lanServer2.getStatus() };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+  ipc.handle("lan:stop", () => {
+    requireAdministrator2();
+    lanServer2.stop();
+    return { ok: true, status: lanServer2.getStatus() };
+  });
+  ipc.handle("lan:ping", async (_e, url) => {
+    requireAdministrator2();
+    const http2 = await import("http");
+    const https = await import("https");
+    return new Promise((resolve) => {
+      const startAt = Date.now();
+      const mod = url.startsWith("https") ? https : http2;
+      const timeout = setTimeout(() => resolve({ ok: false, error: "连接超时（5s）" }), 5e3);
+      const req = mod.get(`${url.replace(/\/$/, "")}/ping`, (res) => {
+        clearTimeout(timeout);
+        const latency = Date.now() - startAt;
+        if (res.statusCode === 200) {
+          resolve({ ok: true, latency });
+        } else {
+          resolve({ ok: false, error: `HTTP ${res.statusCode}` });
+        }
+        res.resume();
+      });
+      req.on("error", (err) => {
+        clearTimeout(timeout);
+        resolve({ ok: false, error: err.message });
+      });
+    });
+  });
+}
 function toSafeUser(user) {
   const { password_hash: _h, password_salt: _s, ...safe } = user;
   return safe;
 }
+function permissionKeys(value) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function requirePermission(repo, menu, button) {
+  const currentUser = requireActiveUser(repo);
+  const role = repo.findRoleById(currentUser.role_id);
+  if (!role || role.deleted_at !== null) throw new Error("当前账号角色无效");
+  const menus = permissionKeys(role.menu_keys);
+  if (!menus.includes("*") && !menus.includes(menu)) throw new Error("当前账号无此菜单权限");
+  if (button) {
+    const buttons = permissionKeys(role.button_keys);
+    if (!buttons.includes("*") && !buttons.includes(button)) throw new Error("当前账号无此操作权限");
+  }
+}
+function requireAdministrator(repo) {
+  if (requireActiveUser(repo).role_id !== "role-admin") throw new Error("仅系统管理员可执行角色和高权限账号操作");
+}
+function isPrivilegedRole(repo, roleId) {
+  const role = repo.findRoleById(roleId);
+  return !!role && (roleId === "role-admin" || permissionKeys(role.menu_keys).includes("*") || permissionKeys(role.button_keys).includes("*"));
+}
+function requireCanManageUser(repo, targetUserId) {
+  const currentUser = requireActiveUser(repo);
+  const target = repo.findUserById(targetUserId);
+  if (!target) throw new Error("目标账号不存在");
+  if (currentUser.role_id !== "role-admin" && (target.username === "admin" || isPrivilegedRole(repo, target.role_id))) {
+    throw new Error("仅系统管理员可管理高权限账号");
+  }
+}
+function validateRoleAssignment(repo, roleId, targetUserId) {
+  if (typeof roleId !== "string") return;
+  const role = repo.findRoleById(roleId);
+  if (!role || role.deleted_at !== null) throw new Error("指定角色不存在");
+  if (isPrivilegedRole(repo, roleId)) requireAdministrator(repo);
+  const currentUser = requireActiveUser(repo);
+  if (targetUserId === currentUser.id && currentUser.role_id !== "role-admin") {
+    throw new Error("不能修改自己的角色");
+  }
+}
 function registerUserHandlers(ipc, repo) {
-  ipc.handle("user:list", () => repo.findAllUsers().map(toSafeUser));
+  ipc.handle("user:list", () => {
+    requirePermission(repo, "user");
+    return repo.findAllUsers().map(toSafeUser);
+  });
   ipc.handle("user:create", (_e, data) => {
     try {
+      requirePermission(repo, "user", "user:create");
+      validateRoleAssignment(repo, data.role_id);
       const row = repo.insertUser(data);
       return { ok: true, user: toSafeUser(row) };
     } catch (err) {
@@ -8520,6 +9592,10 @@ function registerUserHandlers(ipc, repo) {
   });
   ipc.handle("user:update", (_e, { id, data }) => {
     try {
+      requirePermission(repo, "user");
+      requireCanManageUser(repo, id);
+      const update = data && typeof data === "object" ? data : {};
+      validateRoleAssignment(repo, update.role_id, id);
       repo.updateUser(id, data);
       return { ok: true };
     } catch (err) {
@@ -8527,21 +9603,32 @@ function registerUserHandlers(ipc, repo) {
     }
   });
   ipc.handle("user:reset-password", (_e, { id, newPassword }) => {
+    requirePermission(repo, "user", "user:reset-pw");
+    requireCanManageUser(repo, id);
     repo.setPassword(id, newPassword, true);
     return { ok: true };
   });
   ipc.handle("user:delete", (_e, id) => {
     try {
+      requirePermission(repo, "user", "user:delete");
+      requireCanManageUser(repo, id);
       repo.softDeleteUser(id);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "删除失败" };
     }
   });
-  ipc.handle("role:list", () => repo.findAllRoles());
-  ipc.handle("role:create", (_e, data) => repo.insertRole(data));
+  ipc.handle("role:list", () => {
+    requireActiveUser(repo);
+    return repo.findAllRoles();
+  });
+  ipc.handle("role:create", (_e, data) => {
+    requireAdministrator(repo);
+    return repo.insertRole(data);
+  });
   ipc.handle("role:update", (_e, { id, data }) => {
     try {
+      requireAdministrator(repo);
       repo.updateRole(id, data);
       return { ok: true };
     } catch (err) {
@@ -8550,6 +9637,7 @@ function registerUserHandlers(ipc, repo) {
   });
   ipc.handle("role:delete", (_e, id) => {
     try {
+      requireAdministrator(repo);
       repo.deleteRole(id);
       return { ok: true };
     } catch (err) {
@@ -8975,7 +10063,10 @@ function readAppConfig(configPath) {
 function writeAppConfig(configPath, cfg) {
   fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), "utf-8");
 }
-function registerDbHandlers(ipc, defaultDbPath2, appConfigPath2, getMainWindow) {
+function registerDbHandlers(ipc, defaultDbPath2, appConfigPath2, pendingRestorePath2, backupService2, userRepo, getMainWindow, isRemoteSyncRunning) {
+  const requireAdministrator2 = () => {
+    if (requireActiveUser(userRepo).role_id !== "role-admin") throw new Error("仅系统管理员可执行数据安全操作");
+  };
   ipc.handle("db:get-path", () => {
     const cfg = readAppConfig(appConfigPath2);
     return {
@@ -8985,6 +10076,7 @@ function registerDbHandlers(ipc, defaultDbPath2, appConfigPath2, getMainWindow) 
     };
   });
   ipc.handle("db:set-path", (_e, newPath) => {
+    requireAdministrator2();
     const cfg = readAppConfig(appConfigPath2);
     if (newPath) cfg.dbPath = newPath;
     else delete cfg.dbPath;
@@ -8992,12 +10084,14 @@ function registerDbHandlers(ipc, defaultDbPath2, appConfigPath2, getMainWindow) 
     return { ok: true };
   });
   ipc.handle("db:reset-path", () => {
+    requireAdministrator2();
     const cfg = readAppConfig(appConfigPath2);
     delete cfg.dbPath;
     writeAppConfig(appConfigPath2, cfg);
     return { ok: true };
   });
   ipc.handle("db:select-path", async () => {
+    requireAdministrator2();
     const win = getMainWindow();
     const result = await electron.dialog.showSaveDialog(win ?? void 0, {
       title: "选择数据库文件保存位置",
@@ -9007,14 +10101,170 @@ function registerDbHandlers(ipc, defaultDbPath2, appConfigPath2, getMainWindow) 
     if (result.canceled) return { canceled: true };
     return { canceled: false, path: result.filePath };
   });
+  ipc.handle("db:backup:create", () => {
+    requireAdministrator2();
+    return backupService2.createBackup();
+  });
+  ipc.handle("db:backup:list", () => {
+    requireAdministrator2();
+    return backupService2.listBackups();
+  });
+  ipc.handle("db:backup:restore", (_event, name) => {
+    requireAdministrator2();
+    if (isRemoteSyncRunning()) throw new Error("远程同步正在执行，请稍后再恢复数据库备份");
+    const result = backupService2.scheduleRestore(name, pendingRestorePath2);
+    setImmediate(() => {
+      electron.app.relaunch();
+      electron.app.quit();
+    });
+    return result;
+  });
+  ipc.handle("db:integrity-check", () => {
+    requireAdministrator2();
+    return backupService2.integrityCheck();
+  });
+  ipc.handle("db:local-sync:select-and-run", async () => {
+    requireAdministrator2();
+    if (isRemoteSyncRunning()) throw new Error("远程同步正在执行，请稍后再选择本地数据文件");
+    const win = getMainWindow();
+    const selected = await electron.dialog.showOpenDialog(win ?? void 0, {
+      title: "选择要同步的 SQLite 数据文件",
+      properties: ["openFile"],
+      filters: [{ name: "SQLite 数据文件", extensions: ["db", "sqlite", "sqlite3"] }]
+    });
+    if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
+    const staged = await backupService2.stageLocalDataFile(selected.filePaths[0]);
+    const result = backupService2.syncFromStagedFile(staged.importId, staged.fileName);
+    return { canceled: false, result };
+  });
+  ipc.handle("db:backup:export", async (_event, name) => {
+    requireAdministrator2();
+    const sourcePath = backupService2.getBackupPath(name);
+    const win = getMainWindow();
+    const result = await electron.dialog.showSaveDialog(win ?? void 0, {
+      title: "导出数据库备份",
+      defaultPath: path.join(electron.app.getPath("documents"), name),
+      filters: [{ name: "SQLite 数据库备份", extensions: ["db"] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    const destination = path.resolve(result.filePath);
+    const managedDirectory = fs.realpathSync(backupService2.backupDirectory).toLowerCase();
+    const destinationDirectory = fs.realpathSync(path.dirname(destination)).toLowerCase();
+    if (destinationDirectory === managedDirectory || destinationDirectory.startsWith(`${managedDirectory}${path.sep}`)) {
+      throw new Error("不能覆盖程序受控备份目录中的历史备份，请选择其他位置");
+    }
+    fs.copyFileSync(sourcePath, destination);
+    return { canceled: false, path: destination };
+  });
+  ipc.handle("db:backup:open-directory", async () => {
+    requireAdministrator2();
+    const error = await electron.shell.openPath(backupService2.backupDirectory);
+    if (error) throw new Error(error);
+    return { ok: true };
+  });
   ipc.handle("config:app:get", () => readAppConfig(appConfigPath2));
   ipc.handle("config:app:set", (_e, partial) => {
+    if (Object.prototype.hasOwnProperty.call(partial, "dbPath")) requireAdministrator2();
     const cfg = readAppConfig(appConfigPath2);
     Object.assign(cfg, partial);
     if (cfg.autoRefreshSec === 0) delete cfg.autoRefreshSec;
+    if (cfg.chatMode !== void 0 && cfg.chatMode !== "local" && cfg.chatMode !== "online") {
+      delete cfg.chatMode;
+    }
     writeAppConfig(appConfigPath2, cfg);
     return { ok: true };
   });
+}
+function errorMessage(error) {
+  const response = error.response;
+  return response?.data?.msg ?? (error instanceof Error ? error.message : "聊天服务请求失败");
+}
+function registerChatHandlers(ipc, syncConfigRepo, chatRepo, userRepo, appConfigPath2) {
+  let desktopChatSession = null;
+  let onlineIdentityKey = "";
+  const getMode = () => readAppConfig(appConfigPath2).chatMode === "online" ? "online" : "local";
+  const localToken = () => {
+    const currentUser = requireActiveUser(userRepo);
+    if (desktopChatSession?.userId !== currentUser.id) {
+      const issued = chatRepo.createSessionForUser(currentUser.id);
+      desktopChatSession = { userId: currentUser.id, token: issued.token };
+    }
+    return desktopChatSession.token;
+  };
+  const onlineClient = () => {
+    requireActiveUser(userRepo);
+    const config2 = syncConfigRepo.get();
+    const serverUrl = config2.server_url.trim().replace(/\/$/, "");
+    const accessToken = config2.access_token?.trim();
+    if (!serverUrl || !accessToken) {
+      throw new Error("请先在数据同步中配置线上服务地址和访问令牌");
+    }
+    return axios.create({
+      baseURL: serverUrl,
+      timeout: 15e3,
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+  };
+  const onlineRequest = async (run) => {
+    try {
+      const http2 = onlineClient();
+      const currentUser = requireActiveUser(userRepo);
+      const authorization = String(http2.defaults.headers.common.Authorization ?? http2.defaults.headers.Authorization ?? "");
+      const identityKey = `${currentUser.id}:${currentUser.username}:${http2.defaults.baseURL}:${authorization}`;
+      if (onlineIdentityKey !== identityKey) {
+        const identity = await http2.get("/system/chat/me");
+        if (identity.data.code !== 200 || identity.data.data?.userName !== currentUser.username) {
+          throw new Error("线上聊天令牌与当前桌面账号不匹配，请配置该账号对应的访问令牌");
+        }
+        onlineIdentityKey = identityKey;
+      }
+      const response = await run(http2);
+      if (response.data.code !== 200 || response.data.data === void 0) {
+        throw new Error(response.data.msg || "聊天服务返回异常");
+      }
+      return response.data.data;
+    } catch (error) {
+      throw new Error(errorMessage(error));
+    }
+  };
+  ipc.handle("chat:mode:get", () => getMode());
+  ipc.handle("chat:mode:set", async (_event, mode) => {
+    requireActiveUser(userRepo);
+    if (mode !== "local" && mode !== "online") throw new Error("聊天服务模式无效");
+    if (mode === "online") {
+      await onlineRequest((http2) => http2.get("/system/chat/me"));
+    }
+    const config2 = readAppConfig(appConfigPath2);
+    config2.chatMode = mode;
+    writeAppConfig(appConfigPath2, config2);
+    return { mode };
+  });
+  ipc.handle("chat:me", () => getMode() === "local" ? chatRepo.me(localToken()) : onlineRequest((http2) => http2.get("/system/chat/me")));
+  ipc.handle("chat:contacts", (_event, keyword) => getMode() === "local" ? chatRepo.contacts(localToken(), keyword) : onlineRequest((http2) => http2.get("/system/chat/contacts", { params: { keyword } })));
+  ipc.handle("chat:conversations", () => getMode() === "local" ? chatRepo.conversations(localToken()) : onlineRequest((http2) => http2.get("/system/chat/conversations")));
+  ipc.handle("chat:direct:create", (_event, peerUserId) => getMode() === "local" ? chatRepo.createDirect(localToken(), peerUserId) : onlineRequest((http2) => http2.post("/system/chat/conversations/direct", { peerUserId })));
+  ipc.handle("chat:group:create", (_event, input) => getMode() === "local" ? chatRepo.createGroup(localToken(), input) : onlineRequest((http2) => http2.post("/system/chat/conversations/group", input)));
+  ipc.handle("chat:messages", (_event, input) => getMode() === "local" ? chatRepo.messages(localToken(), input) : onlineRequest((http2) => http2.get(
+    `/system/chat/conversations/${input.conversationId}/messages`,
+    { params: input }
+  )));
+  ipc.handle("chat:message:send", (_event, input) => getMode() === "local" ? chatRepo.send(localToken(), input) : onlineRequest((http2) => http2.post(
+    `/system/chat/conversations/${input.conversationId}/messages`,
+    { clientMessageId: input.clientMessageId, messageType: "text", content: input.content }
+  )));
+  ipc.handle(
+    "chat:read",
+    async (_event, input) => {
+      if (getMode() === "local") {
+        chatRepo.markRead(localToken(), input.conversationId, input.lastReadMessageId);
+        return { ok: true };
+      }
+      return onlineRequest((http2) => http2.put(
+        `/system/chat/conversations/${input.conversationId}/read`,
+        { lastReadMessageId: input.lastReadMessageId }
+      ));
+    }
+  );
 }
 const ALLOWED_TABLES = /* @__PURE__ */ new Set([
   "elderly",
@@ -9048,13 +10298,24 @@ const ALLOWED_TABLES = /* @__PURE__ */ new Set([
   "iot_device_alert",
   "announcement"
 ]);
+const LAN_CONFIG_FIELDS = /* @__PURE__ */ new Set(["enabled", "port", "allow_write", "secret"]);
 function readJson(req) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let size = 0;
+    let rejected = false;
     req.on("data", (chunk) => {
+      if (rejected) return;
+      size += Buffer.byteLength(chunk);
+      if (size > 2 * 1024 * 1024) {
+        rejected = true;
+        reject(new Error("请求体不能超过 2 MB"));
+        return;
+      }
       body += chunk;
     });
     req.on("end", () => {
+      if (rejected) return;
       try {
         resolve(JSON.parse(body || "{}"));
       } catch {
@@ -9065,16 +10326,22 @@ function readJson(req) {
   });
 }
 function sendJson(res, status, data) {
-  res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Private-Network": "true"
+  });
   res.end(JSON.stringify(data));
 }
 class LanServer {
-  constructor(db2, iotRepo) {
+  constructor(db2, iotRepo, chatRepo) {
     this.db = db2;
     this.iotRepo = iotRepo;
+    this.chatRepo = chatRepo;
   }
   db;
   iotRepo;
+  chatRepo;
   server = null;
   currentPort = 7788;
   // ─── 配置读写 ──────────────────────────────────────────────
@@ -9082,10 +10349,15 @@ class LanServer {
     return this.db.prepare("SELECT * FROM lan_config WHERE id=1").get();
   }
   saveConfig(cfg) {
-    const fields = Object.keys(cfg);
+    const normalized = { ...cfg };
+    if (Object.prototype.hasOwnProperty.call(normalized, "secret") && !normalized.secret) {
+      normalized.secret = nanoid$1.nanoid(32);
+    }
+    const fields = Object.keys(normalized).filter((field) => LAN_CONFIG_FIELDS.has(field));
     if (!fields.length) return;
     const sets = [...fields, "updated_at"].map((f) => `${f}=@${f}`).join(",");
-    this.db.prepare(`UPDATE lan_config SET ${sets} WHERE id=1`).run({ ...cfg, updated_at: Date.now() });
+    const values = Object.fromEntries(fields.map((field) => [field, normalized[field]]));
+    this.db.prepare(`UPDATE lan_config SET ${sets} WHERE id=1`).run({ ...values, updated_at: Date.now() });
   }
   // ─── 本机局域网 IP ─────────────────────────────────────────
   getLanIPs() {
@@ -9107,10 +10379,16 @@ class LanServer {
   async start(port) {
     if (this.server?.listening) return;
     const cfg = this.getConfig();
+    if (!cfg.secret) {
+      cfg.secret = nanoid$1.nanoid(32);
+      this.saveConfig({ secret: cfg.secret });
+    }
     this.currentPort = port ?? cfg.port ?? 7788;
     return new Promise((resolve, reject) => {
       this.server = http.createServer((req, res) => this.handleRequest(req, res));
       this.server.listen(this.currentPort, "0.0.0.0", () => {
+        const address = this.server?.address();
+        if (address && typeof address === "object") this.currentPort = address.port;
         console.info(`[LAN Server] 已启动，端口 ${this.currentPort}`);
         resolve();
       });
@@ -9141,36 +10419,164 @@ class LanServer {
   // ─── 请求路由 ──────────────────────────────────────────────
   handleRequest(req, res) {
     const cfg = this.getConfig();
+    const requestUrl = new URL(req.url ?? "/", "http://localhost");
+    const pathname = requestUrl.pathname;
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, X-Secret"
+        "Access-Control-Allow-Methods": "POST, GET, PUT, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Secret",
+        "Access-Control-Allow-Private-Network": "true"
       });
       return res.end();
     }
+    if (req.method === "GET" && pathname === "/ping") {
+      return sendJson(res, 200, { code: 0, message: "pong", data: { version: "1.0", time: Date.now() } });
+    }
+    const requiresSharedSecret = pathname.startsWith("/sync/") || pathname === "/iot/report";
+    if (requiresSharedSecret && !cfg.secret) {
+      return sendJson(res, 503, { code: 503, message: "局域网服务尚未配置访问密钥" });
+    }
     if (cfg.secret) {
-      const clientSecret = req.headers["x-secret"];
+      const authorization = req.headers.authorization ?? "";
+      const bearerSecret = /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim();
+      const clientSecret = req.headers["x-secret"] || (requiresSharedSecret ? bearerSecret : void 0);
       if (clientSecret !== cfg.secret) {
         return sendJson(res, 401, { code: 401, message: "密钥错误" });
       }
     }
-    if (req.method === "GET" && req.url === "/ping") {
-      return sendJson(res, 200, { code: 0, message: "pong", data: { version: "1.0", time: Date.now() } });
+    if (pathname.startsWith("/system/chat/") || pathname === "/system/scene/buildings") {
+      void this.handleChatRequest(req, res, requestUrl);
+      return;
     }
-    if (req.method === "POST" && req.url === "/sync/upload") {
+    if (req.method === "POST" && pathname === "/sync/upload") {
       void this.handleUpload(req, res, cfg);
       return;
     }
-    if (req.method === "POST" && req.url === "/sync/download") {
+    if (req.method === "POST" && pathname === "/sync/download") {
       void this.handleDownload(req, res);
       return;
     }
-    if (req.method === "POST" && req.url === "/iot/report") {
+    if (req.method === "POST" && pathname === "/iot/report") {
       void this.handleIotReport(req, res);
       return;
     }
     sendJson(res, 404, { code: 404, message: "接口不存在" });
+  }
+  // ─── 本地聊天：复用线上 /system/chat/* 契约 ─────────────────
+  async handleChatRequest(req, res, requestUrl) {
+    if (!this.chatRepo) {
+      sendJson(res, 503, { code: 503, msg: "本地聊天服务未初始化" });
+      return;
+    }
+    const success = (data) => {
+      sendJson(res, 200, { code: 200, msg: "操作成功", data });
+    };
+    try {
+      const pathname = requestUrl.pathname;
+      if (req.method === "POST" && pathname === "/system/chat/login") {
+        const body = await readJson(req);
+        const login = this.chatRepo.login(body.username ?? "", body.password ?? "");
+        success({
+          token: login.token,
+          expiresAt: login.expiresAt,
+          user: {
+            userId: login.userId,
+            userName: login.userName,
+            nickName: login.nickName
+          }
+        });
+        return;
+      }
+      const authorization = req.headers.authorization ?? "";
+      const match = /^Bearer\s+(.+)$/i.exec(authorization);
+      if (!match?.[1]) {
+        sendJson(res, 401, { code: 401, msg: "请先登录本地聊天" });
+        return;
+      }
+      const token = match[1].trim();
+      this.chatRepo.authenticate(token);
+      if (req.method === "GET" && pathname === "/system/scene/buildings") {
+        success({
+          buildings: this.db.prepare(
+            `SELECT id, name, floors FROM building WHERE deleted_at IS NULL ORDER BY sort_order, name`
+          ).all(),
+          rooms: this.db.prepare(
+            `SELECT id, building_id, floor, room_no, status
+             FROM room WHERE deleted_at IS NULL ORDER BY building_id, floor, room_no`
+          ).all(),
+          beds: this.db.prepare(
+            `SELECT id, room_id, bed_no, status
+             FROM bed WHERE deleted_at IS NULL ORDER BY room_id, bed_no`
+          ).all()
+        });
+        return;
+      }
+      if (req.method === "POST" && pathname === "/system/chat/logout") {
+        this.chatRepo.logout(token);
+        success({ ok: true });
+        return;
+      }
+      if (req.method === "GET" && pathname === "/system/chat/me") {
+        success(this.chatRepo.me(token));
+        return;
+      }
+      if (req.method === "GET" && pathname === "/system/chat/contacts") {
+        success(this.chatRepo.contacts(token, requestUrl.searchParams.get("keyword") ?? void 0));
+        return;
+      }
+      if (req.method === "GET" && pathname === "/system/chat/conversations") {
+        success(this.chatRepo.conversations(token));
+        return;
+      }
+      if (req.method === "POST" && pathname === "/system/chat/conversations/direct") {
+        const body = await readJson(req);
+        success(this.chatRepo.createDirect(token, body.peerUserId ?? ""));
+        return;
+      }
+      if (req.method === "POST" && pathname === "/system/chat/conversations/group") {
+        const body = await readJson(req);
+        success(this.chatRepo.createGroup(token, body));
+        return;
+      }
+      const messagesMatch = /^\/system\/chat\/conversations\/(\d+)\/messages$/.exec(pathname);
+      if (messagesMatch) {
+        const conversationId = Number(messagesMatch[1]);
+        if (req.method === "GET") {
+          const numberParam = (name) => {
+            const value = requestUrl.searchParams.get(name);
+            return value ? Number(value) : void 0;
+          };
+          success(this.chatRepo.messages(token, {
+            conversationId,
+            afterMessageId: numberParam("afterMessageId"),
+            beforeMessageId: numberParam("beforeMessageId"),
+            limit: numberParam("limit")
+          }));
+          return;
+        }
+        if (req.method === "POST") {
+          const body = await readJson(req);
+          success(this.chatRepo.send(token, { ...body, conversationId }));
+          return;
+        }
+      }
+      const readMatch = /^\/system\/chat\/conversations\/(\d+)\/read$/.exec(pathname);
+      if (req.method === "PUT" && readMatch) {
+        const body = await readJson(req);
+        this.chatRepo.markRead(token, Number(readMatch[1]), Number(body.lastReadMessageId));
+        success({ ok: true });
+        return;
+      }
+      sendJson(res, 404, { code: 404, msg: "聊天接口不存在" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "本地聊天请求失败";
+      const unauthorized = /登录|用户名或密码|账号已停用|聊天权限/.test(message);
+      sendJson(res, unauthorized ? 401 : 400, {
+        code: unauthorized ? 401 : 400,
+        msg: message
+      });
+    }
   }
   // ─── 物联网设备数据上报 ─────────────────────────────────────
   async handleIotReport(req, res) {
@@ -9201,25 +10607,23 @@ class LanServer {
       let applied = 0;
       const apply = this.db.transaction(() => {
         for (const change of changes) {
-          if (!ALLOWED_TABLES.has(change.tableName)) continue;
-          try {
-            this.applyChange(change.tableName, change.operation, change.payload);
-            this.db.prepare(`
-              INSERT OR IGNORE INTO change_log (id, table_name, record_id, operation, payload, created_at, synced, synced_at)
-              VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-            `).run(
-              change.id ?? nanoid$1.nanoid(),
-              change.tableName,
-              change.recordId,
-              change.operation,
-              JSON.stringify(change.payload),
-              change.createdAt ?? Date.now(),
-              Date.now()
-            );
-            applied++;
-          } catch (e) {
-            console.warn("[LAN Server] applyChange 失败:", e);
+          if (!ALLOWED_TABLES.has(change.tableName)) {
+            throw new Error(`不允许同步数据表：${change.tableName}`);
           }
+          this.applyChange(change.tableName, change.operation, change.payload);
+          this.db.prepare(`
+            INSERT OR IGNORE INTO change_log (id, table_name, record_id, operation, payload, created_at, synced, synced_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+          `).run(
+            change.id ?? nanoid$1.nanoid(),
+            change.tableName,
+            change.recordId,
+            change.operation,
+            JSON.stringify(change.payload),
+            change.createdAt ?? Date.now(),
+            Date.now()
+          );
+          applied++;
         }
       });
       apply();
@@ -9257,7 +10661,7 @@ class LanServer {
   }
   // ─── 变更应用到本地 DB ─────────────────────────────────────
   applyChange(table, operation, payload) {
-    if (!payload.id) return;
+    if (!payload.id) throw new Error(`同步 ${table} 数据缺少 id`);
     if (operation === "DELETE") {
       const hasDeletedAt = this.db.prepare(`SELECT 1 FROM pragma_table_info('${table}') WHERE name='deleted_at'`).get();
       if (hasDeletedAt) {
@@ -9271,12 +10675,19 @@ class LanServer {
       }
       return;
     }
+    const tableColumns = new Set(
+      this.db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name)
+    );
     const cols = Object.keys(payload);
-    if (!cols.length) return;
+    const invalidColumns = cols.filter((column) => !tableColumns.has(column));
+    if (invalidColumns.length) {
+      throw new Error(`数据表 ${table} 包含非法字段：${invalidColumns.join(", ")}`);
+    }
     const placeholders = cols.map((c) => `@${c}`).join(", ");
-    const updates = cols.filter((c) => c !== "id").map((c) => `${c}=excluded.${c}`).join(", ");
+    const updateColumns = cols.filter((c) => c !== "id");
+    const conflict = updateColumns.length ? `DO UPDATE SET ${updateColumns.map((c) => `${c}=excluded.${c}`).join(", ")}` : "DO NOTHING";
     this.db.prepare(`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${placeholders})
-                ON CONFLICT(id) DO UPDATE SET ${updates}`).run(payload);
+                ON CONFLICT(id) ${conflict}`).run(payload);
   }
 }
 electron.app.setPath("sessionData", path.join(electron.app.getPath("userData"), "session-data"));
@@ -9287,10 +10698,22 @@ log.transports.console.level = utils.is.dev ? "debug" : "warn";
 electronUpdater.autoUpdater.logger = log;
 const defaultDbPath = path.join(electron.app.getPath("userData"), "yanglao.db");
 const appConfigPath = path.join(electron.app.getPath("userData"), "yanglao-app-config.json");
+const pendingRestorePath = path.join(electron.app.getPath("userData"), "pending-database-restore.json");
+const backupDirectory = path.join(electron.app.getPath("userData"), "backups");
 const appConfig = readAppConfig(appConfigPath);
 const dbPath = appConfig.dbPath || defaultDbPath;
+const restoreResult = applyPendingDatabaseRestore({
+  dbPath,
+  backupDirectory,
+  pendingRestorePath
+});
 const db = initDatabase(dbPath);
 const repos = createRepos(db);
+const backupService = new DatabaseBackupService(db, {
+  dbPath,
+  backupDirectory,
+  importDirectory: path.join(electron.app.getPath("userData"), "imports")
+});
 const deviceId = process.env["YANGLAO_DEVICE_ID"] || nanoid$1.nanoid();
 const syncEngine = new SyncEngine(
   (limit) => repos.changeLog.getUnsynced(limit),
@@ -9319,8 +10742,9 @@ const syncEngine = new SyncEngine(
 const scheduler = new SyncScheduler(syncEngine);
 const savedConfig = repos.syncConfig.toSyncConfig(repos.syncConfig.get());
 scheduler.applyConfig(savedConfig);
-const lanServer = new LanServer(db, repos.iot);
+const lanServer = new LanServer(db, repos.iot, repos.chat);
 let mainWindow = null;
+let restoreResultShown = false;
 if (gotSingleInstanceLock) {
   electron.app.on("second-instance", () => {
     if (!mainWindow) return;
@@ -9349,6 +10773,24 @@ function createWindow() {
   });
   mainWindow.on("ready-to-show", () => {
     mainWindow.show();
+    if (restoreResult && !restoreResultShown) {
+      restoreResultShown = true;
+      if (restoreResult.restored) {
+        void electron.dialog.showMessageBox(mainWindow, {
+          type: "info",
+          title: "数据库已恢复",
+          message: `已从 ${restoreResult.name} 恢复本地数据。`,
+          detail: restoreResult.safetyBackup ? `恢复前数据已另存为 ${restoreResult.safetyBackup.name}。` : ""
+        });
+      } else {
+        void electron.dialog.showMessageBox(mainWindow, {
+          type: "error",
+          title: "数据库恢复失败",
+          message: restoreResult.error || "数据库备份恢复失败",
+          detail: restoreResult.originalPreserved ? "原数据库未被替换，可以继续使用。" : "自动回滚未完成，请联系技术人员并保留备份目录。"
+        });
+      }
+    }
     try {
       repos.notification.generateBirthdayReminders(db);
       repos.iot.checkHealth();
@@ -9388,7 +10830,7 @@ registerMealHandlers(electron.ipcMain, repos.meal);
 registerActivityHandlers(electron.ipcMain, repos.activity);
 registerContractHandlers(electron.ipcMain, repos.contract);
 registerNotificationHandlers(electron.ipcMain, repos.notification);
-registerLanHandlers(electron.ipcMain, lanServer);
+registerLanHandlers(electron.ipcMain, lanServer, repos.user);
 registerAuthHandlers(electron.ipcMain, repos.user);
 registerUserHandlers(electron.ipcMain, repos.user);
 registerAttendanceHandlers(electron.ipcMain, repos.attendance);
@@ -9398,7 +10840,17 @@ registerTaskReminderHandlers(electron.ipcMain, repos.taskReminder);
 registerAnnouncementHandlers(electron.ipcMain, repos.announcement);
 registerOperationsHandlers(electron.ipcMain, repos.operations);
 registerPurchaseHandlers(electron.ipcMain, repos.supplier, repos.purchaseOrder);
-registerDbHandlers(electron.ipcMain, defaultDbPath, appConfigPath, () => mainWindow);
+registerChatHandlers(electron.ipcMain, repos.syncConfig, repos.chat, repos.user, appConfigPath);
+registerDbHandlers(
+  electron.ipcMain,
+  defaultDbPath,
+  appConfigPath,
+  pendingRestorePath,
+  backupService,
+  repos.user,
+  () => mainWindow,
+  () => scheduler.getStatus() === "syncing"
+);
 cron.schedule("* * * * *", () => {
   try {
     const currentUser = session.user;

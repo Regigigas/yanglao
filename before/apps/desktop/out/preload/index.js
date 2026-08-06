@@ -247,6 +247,18 @@ const api = {
     readStats: (id) => electron.ipcRenderer.invoke("announcement:read-stats", id),
     readUsers: (id) => electron.ipcRenderer.invoke("announcement:read-users", id)
   },
+  chat: {
+    getMode: () => electron.ipcRenderer.invoke("chat:mode:get"),
+    setMode: (mode) => electron.ipcRenderer.invoke("chat:mode:set", mode),
+    me: () => electron.ipcRenderer.invoke("chat:me"),
+    contacts: (keyword) => electron.ipcRenderer.invoke("chat:contacts", keyword),
+    conversations: () => electron.ipcRenderer.invoke("chat:conversations"),
+    createDirect: (peerUserId) => electron.ipcRenderer.invoke("chat:direct:create", peerUserId),
+    createGroup: (input) => electron.ipcRenderer.invoke("chat:group:create", input),
+    messages: (input) => electron.ipcRenderer.invoke("chat:messages", input),
+    send: (input) => electron.ipcRenderer.invoke("chat:message:send", input),
+    markRead: (conversationId, lastReadMessageId) => electron.ipcRenderer.invoke("chat:read", { conversationId, lastReadMessageId })
+  },
   // ── 运营与安全闭环 ─────────────────────────────────────────────
   operations: {
     riskSummary: () => electron.ipcRenderer.invoke("operations:risk-summary"),
@@ -422,7 +434,14 @@ const api = {
     getPath: () => electron.ipcRenderer.invoke("db:get-path"),
     setPath: (newPath) => electron.ipcRenderer.invoke("db:set-path", newPath),
     resetPath: () => electron.ipcRenderer.invoke("db:reset-path"),
-    selectPath: () => electron.ipcRenderer.invoke("db:select-path")
+    selectPath: () => electron.ipcRenderer.invoke("db:select-path"),
+    createBackup: () => electron.ipcRenderer.invoke("db:backup:create"),
+    listBackups: () => electron.ipcRenderer.invoke("db:backup:list"),
+    restoreBackup: (name) => electron.ipcRenderer.invoke("db:backup:restore", name),
+    checkIntegrity: () => electron.ipcRenderer.invoke("db:integrity-check"),
+    syncLocalFile: () => electron.ipcRenderer.invoke("db:local-sync:select-and-run"),
+    exportBackup: (name) => electron.ipcRenderer.invoke("db:backup:export", name),
+    openBackupDirectory: () => electron.ipcRenderer.invoke("db:backup:open-directory")
   },
   // ── 应用级通用配置（自动刷新间隔等） ───────────────────────────
   config: {
