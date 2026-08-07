@@ -120,6 +120,7 @@ export default {
         { label: '健康告警', icon: 'icon-alert',    path: '/pages-health/alerts/index',   color: '#e67e22' },
         { label: '护理任务', icon: 'icon-task',     path: '/pages-care/tasks/index',      color: '#4A90D9' },
         { label: '护理记录', icon: 'icon-record',   path: '/pages-care/records/index',    color: '#9b59b6' },
+        { label: '白事管理', icon: 'icon-checklist', path: '/pages-funeral/index/index',   color: '#52606d' },
         { label: '设备连接', icon: 'icon-bluetooth',path: '/pages-device/connect/index',  color: '#2ecc71' },
         { label: '设备列表', icon: 'icon-device',   path: '/pages-device/list/index',     color: '#1abc9c' },
         { label: '3D楼栋',   icon: 'icon-bed',      path: '/pages-scene/building/index',  color: '#3f7f67' },

@@ -33,10 +33,12 @@ export default {
         warm:  { bg: '#e67e22', text: 'white' }
       }
       const c = navColors[settings.theme] || navColors.light
-      uni.setNavigationBarColor({
+      const result = uni.setNavigationBarColor({
         frontColor: '#ffffff',
-        backgroundColor: c.bg
+        backgroundColor: c.bg,
+        fail: () => {}
       })
+      if (result && typeof result.catch === 'function') result.catch(() => {})
     }
   }
 }

@@ -189,12 +189,38 @@
           }
         }
       ]
+    },
+    {
+      "root": "pages-funeral",
+      "pages": [
+        {
+          "path": "index/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
+          }
+        },
+        {
+          "path": "detail/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
+          }
+        },
+        {
+          "path": "storage/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
+          }
+        }
+      ]
     }
   ],
   "preloadRule": {
     "pages/index/index": {
       "network": "all",
-      "packages": ["pages-auth", "pages-health", "pages-care", "pages-device", "pages-settings", "pages-purchase", "pages-chat", "pages-scene"]
+      "packages": ["pages-auth", "pages-health", "pages-care", "pages-device", "pages-settings", "pages-purchase", "pages-chat", "pages-scene", "pages-funeral"]
     }
   },
   "globalStyle": {

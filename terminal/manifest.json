@@ -33,7 +33,10 @@
           "<uses-permission android:name=\"android.permission.ACCESS_WIFI_STATE\"/>",
           "<uses-permission android:name=\"android.permission.CHANGE_WIFI_STATE\"/>",
           "<uses-permission android:name=\"android.permission.INTERNET\"/>",
-          "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+           "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+          "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\"/>",
+          "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" android:maxSdkVersion=\"32\"/>",
+          "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\" android:maxSdkVersion=\"29\"/>",
           "<uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\"/>"
         ]
       },
@@ -42,7 +45,10 @@
         "privacyDescription": {
           "NSBluetoothAlwaysUsageDescription": "需要使用蓝牙连接护理监测设备",
           "NSBluetoothPeripheralUsageDescription": "需要使用蓝牙连接护理监测设备",
-          "NSLocationWhenInUseUsageDescription": "蓝牙扫描功能需要位置权限"
+          "NSLocationWhenInUseUsageDescription": "蓝牙扫描功能需要位置权限",
+          "NSCameraUsageDescription": "需要拍摄白事证明材料并归档",
+          "NSPhotoLibraryUsageDescription": "需要从相册选择白事证明材料",
+          "NSPhotoLibraryAddUsageDescription": "需要将白事证明材料保存到选定目录"
         }
       },
       "sdkConfigs": {}

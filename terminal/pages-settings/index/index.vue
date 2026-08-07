@@ -48,6 +48,17 @@
       </view>
     </view>
 
+    <!-- 设置分组：资料存储 -->
+    <view class="group-title">资料存储</view>
+    <view class="card group-card">
+      <view class="setting-item" @tap="goTo('/pages-funeral/storage/index')">
+        <text class="iconfont icon-location item-icon" style="color:#52606d"></text>
+        <text class="item-label">白事证明材料</text>
+        <text class="item-value storage-value">{{ funeralStoragePath }}</text>
+        <text class="iconfont icon-arrow-right item-arrow"></text>
+      </view>
+    </view>
+
     <!-- 设置分组：网络 -->
     <view class="group-title">网络配置</view>
     <view class="card group-card">
@@ -143,6 +154,7 @@ import { useDeviceStore }   from '../../store/device'
 import { useSettingsStore } from '../../store/settings'
 import { getBaseUrl, setBaseUrl } from '../../api/request'
 import { CHAT_MODE_LOCAL, getChatConfig } from '../../utils/chat-config'
+import { getConfiguredStoragePath, getFuneralStorageConfig } from '../../utils/funeral-storage'
 import NavBar       from '../../components/NavBar.vue'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 
@@ -166,13 +178,17 @@ export default {
       currentServerUrl: getBaseUrl(),
       connStatusText:  '点击测试',
       connStatusClass: '',
-      chatMode: getChatConfig().mode
+      chatMode: getChatConfig().mode,
+      funeralStorageConfig: getFuneralStorageConfig()
     }
   },
   computed: {
     themeLabel() { return THEME_LABELS[this.settingsStore.theme] || '浅色' },
     fontLabel()  { return FONT_LABELS[this.settingsStore.fontSize] || '中' },
     chatModeLabel() { return this.chatMode === CHAT_MODE_LOCAL ? '局域网本地' : '线上服务' },
+    funeralStoragePath() {
+      return this.funeralStorageConfig.resolvedPath || getConfiguredStoragePath(this.funeralStorageConfig)
+    },
     userRoleText() {
       return (this.userStore.roles || []).map(r => r.roleName || r).join('、') || '护理人员'
     }
@@ -181,6 +197,7 @@ export default {
     this.userStore.restoreFromStorage()
     this.currentServerUrl = getBaseUrl()
     this.chatMode = getChatConfig().mode
+    this.funeralStorageConfig = getFuneralStorageConfig()
   },
   methods: {
     goTo(path) {
@@ -298,6 +315,12 @@ export default {
 /* 服务器地址 */
 .server-url {
   max-width: 300rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.storage-value {
+  max-width: 260rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
