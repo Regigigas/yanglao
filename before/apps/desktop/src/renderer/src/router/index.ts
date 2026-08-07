@@ -228,6 +228,16 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'service-loop',
+        name: 'ServiceLoop',
+        component: () => import('../views/service-loop/ServiceLoopView.vue'),
+        meta: {
+          title: '服务闭环',
+          icon: 'i-ion:git-network-outline',
+          menuKey: 'service-loop',
+        },
+      },
+      {
         path: 'chat',
         name: 'Chat',
         component: () => import('../views/chat/ChatView.vue'),

@@ -148,6 +148,12 @@ export const MENU_CATALOG: MenuCatalogItem[] = [
     group: 'operations',
   },
   {
+    key: 'service-loop',
+    label: '服务闭环',
+    icon: 'i-ion:git-network-outline',
+    group: 'operations',
+  },
+  {
     key: 'chat',
     label: '消息中心',
     icon: 'i-ion:chatbubbles-outline',
@@ -223,6 +229,11 @@ export const BUTTON_CATALOG: { key: string; label: string }[] = [
   { key: 'operations:incident', label: '处理安全事件' },
   { key: 'operations:inventory', label: '管理物资库存' },
   { key: 'operations:document', label: '管理合规文书' },
+  { key: 'service-loop:reception', label: '登记预约接待' },
+  { key: 'service-loop:ticket', label: '创建服务工单' },
+  { key: 'service-loop:patrol', label: '记录巡房巡查' },
+  { key: 'service-loop:follow-up', label: '登记家属回访' },
+  { key: 'service-loop:retrofit', label: '登记适老化评估' },
 ];
 
 /** 判断某个 menu_keys（JSON 数组字符串或已解析数组）是否允许访问指定 key，"*" 代表全部 */
