@@ -495,13 +495,14 @@
           <!-- 快速新建任务提醒 -->
           <NTooltip>
             <template #trigger>
-              <AlarmClock
-                class="header-icon"
-                theme="outline"
-                :size="18"
-                :stroke-width="3"
-                @click="openQuickReminder"
-              />
+              <span class="header-action" @click="openQuickReminder">
+                <AlarmClock
+                  class="header-icon header-icon-clock"
+                  theme="outline"
+                  :size="18"
+                  :stroke-width="3"
+                />
+              </span>
             </template>
             快速新建任务提醒
           </NTooltip>
@@ -513,18 +514,21 @@
             @update:show="handleNotificationPanel"
           >
             <template #trigger>
-              <NBadge
-                :value="notifyStore.unreadCount"
-                :max="99"
-                :show="notifyStore.unreadCount > 0"
-              >
-                <Announcement
-                  class="header-icon"
-                  theme="outline"
-                  :size="18"
-                  :stroke-width="3"
-                />
-              </NBadge>
+              <span class="header-action">
+                <NBadge
+                  class="header-action-badge"
+                  :value="notifyStore.unreadCount"
+                  :max="99"
+                  :show="notifyStore.unreadCount > 0"
+                >
+                  <Announcement
+                    class="header-icon header-icon-notice"
+                    theme="outline"
+                    :size="18"
+                    :stroke-width="3"
+                  />
+                </NBadge>
+              </span>
             </template>
             <div style="width: 380px">
               <div class="flex-between mb-2">
@@ -597,22 +601,22 @@
             </div>
           </NPopover>
           <!-- 主题切换 -->
-          <Sun
-            v-if="isDark"
-            class="header-icon ml-2"
-            theme="outline"
-            :size="18"
-            :stroke-width="3"
-            @click="toggle"
-          />
-          <Moon
-            v-else
-            class="header-icon ml-2"
-            theme="outline"
-            :size="18"
-            :stroke-width="3"
-            @click="toggle"
-          />
+          <span class="header-action header-action-theme" @click="toggle">
+            <Sun
+              v-if="isDark"
+              class="header-icon header-icon-theme"
+              theme="outline"
+              :size="18"
+              :stroke-width="3"
+            />
+            <Moon
+              v-else
+              class="header-icon header-icon-theme"
+              theme="outline"
+              :size="18"
+              :stroke-width="3"
+            />
+          </span>
           <!-- 当前用户 -->
           <NDropdown :options="userMenuOptions" @select="handleUserMenuSelect">
             <NSpace align="center" class="cursor-pointer ml-2" :size="6">
@@ -838,15 +842,60 @@
     height: 22px;
   }
 
+  .header-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .header-action-theme {
+    margin-left: 8px;
+  }
+
+  .header-action-badge,
+  .header-action-badge :deep(.n-badge-sup) {
+    line-height: 1;
+  }
+
+  .header-action-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+  }
+
+  .header-action-badge :deep(.n-badge) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
   .header-icon {
     width: 18px;
     height: 18px;
-    cursor: pointer;
   }
 
   .header-icon :deep(svg) {
     width: 18px;
     height: 18px;
+  }
+
+  .header-icon-clock :deep(svg) {
+    transform: scale(1.08);
+  }
+
+  .header-icon-notice :deep(svg) {
+    transform: scale(1.12);
+  }
+
+  .header-icon-theme :deep(svg) {
+    transform: scale(0.95);
   }
 
   .header-icon:hover {
