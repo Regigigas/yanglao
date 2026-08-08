@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/renderer/src/*"],
+      "@ui/*": ["../../packages/ui/src/*"],
+      "@core/*": ["../../packages/core/src/*"],
+      "@main/*": ["./src/main/*"],
+      "@yanglao/core": ["../../packages/core/src/index.ts"],
+      "@yanglao/core/*": ["../../packages/core/src/*"],
+      "@yanglao/db": ["../../packages/db/src/index.ts"],
+      "@yanglao/db/*": ["../../packages/db/src/*"],
+      "@yanglao/sync": ["../../packages/sync/src/index.ts"],
+      "@yanglao/sync/*": ["../../packages/sync/src/*"]
+    }
+  },
+  "include": [
+    "src/renderer/src/**/*",
+    "src/renderer/auto-imports.d.ts",
+    "src/renderer/components.d.ts",
+    "electron.vite.config.ts",
+    "electron-builder.config.ts"
+  ],
+  "exclude": ["node_modules", "out", "release"]
+}

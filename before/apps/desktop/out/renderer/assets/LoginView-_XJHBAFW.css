@@ -1,0 +1,11 @@
+
+.login-page[data-v-7629aede] {
+    background: linear-gradient(135deg, #1a3a5c 0%, #2c5f8a 100%);
+}
+.login-input-icon[data-v-7629aede] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #667085;
+    flex: 0 0 auto;
+}

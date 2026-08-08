@@ -1,0 +1,27 @@
+{
+  "name": "@yanglao/db",
+  "version": "1.0.0",
+  "private": true,
+  "description": "本地 SQLite 数据层（Electron 主进程专用）",
+  "type": "commonjs",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./migrations": "./src/migrations/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@yanglao/core": "workspace:*",
+    "better-sqlite3": "13.0.1",
+    "nanoid": "6.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "26.1.1",
+    "typescript": "5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

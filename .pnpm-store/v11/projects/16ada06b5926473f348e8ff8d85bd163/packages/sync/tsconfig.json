@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "baseUrl": ".",
+    "paths": {
+      "@yanglao/sync/*": ["./src/*"],
+      "@yanglao/db": ["../../packages/db/src/index.ts"],
+      "@yanglao/db/*": ["../../packages/db/src/*"],
+      "@yanglao/core": ["../../packages/core/src/index.ts"],
+      "@yanglao/core/*": ["../../packages/core/src/*"]
+    },
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

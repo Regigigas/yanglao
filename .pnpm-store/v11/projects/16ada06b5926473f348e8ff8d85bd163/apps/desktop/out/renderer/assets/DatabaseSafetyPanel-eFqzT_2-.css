@@ -1,0 +1,95 @@
+
+.data-safety-tools[data-v-93becaf7] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.data-safety-tool[data-v-93becaf7] {
+    min-height: 82px;
+    padding: 14px;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    border: 1px solid var(--n-border-color);
+    border-radius: 6px;
+}
+.local-sync-tool[data-v-93becaf7] {
+    grid-column: 1 / -1;
+}
+.data-safety-icon[data-v-93becaf7] {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    color: #34754d;
+    background: #e8f3ec;
+    border-radius: 6px;
+}
+.data-safety-icon.integrity[data-v-93becaf7] {
+    color: #9a6718;
+    background: #f8f0df;
+}
+.data-safety-icon.sync[data-v-93becaf7] {
+    color: #326d84;
+    background: #e6f1f5;
+}
+.data-safety-icon[data-v-93becaf7] svg {
+    width: 20px;
+    height: 20px;
+}
+.data-button-icon[data-v-93becaf7] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+.tool-detail[data-v-93becaf7],
+  .last-sync-detail[data-v-93becaf7],
+  .backup-path[data-v-93becaf7] {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+}
+.last-sync-detail[data-v-93becaf7] {
+    color: #34754d;
+}
+.backup-heading[data-v-93becaf7] {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.backup-table-wrap[data-v-93becaf7] {
+    overflow-x: auto;
+}
+.backup-table-wrap table[data-v-93becaf7] {
+    min-width: 720px;
+}
+.backup-name[data-v-93becaf7],
+  .backup-path[data-v-93becaf7] {
+    max-width: 480px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.backup-name[data-v-93becaf7] {
+    display: block;
+}
+@media (max-width: 760px) {
+.data-safety-tools[data-v-93becaf7] {
+      grid-template-columns: 1fr;
+}
+.data-safety-tool[data-v-93becaf7] {
+      grid-template-columns: 38px minmax(0, 1fr);
+}
+.data-safety-tool .n-button[data-v-93becaf7] {
+      grid-column: 2;
+      justify-self: start;
+}
+.backup-heading[data-v-93becaf7] {
+      align-items: flex-start;
+      flex-direction: column;
+}
+}
