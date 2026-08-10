@@ -47,8 +47,8 @@
 
     <!-- 提交按钮 -->
     <view class="submit-bar">
-      <view class="submit-btn draft" @tap="submitDraft">存为草稿</view>
-      <view class="submit-btn confirm" @tap="submitApply">提交申请</view>
+      <view class="submit-btn draft" :class="{ disabled: submitting }" @tap="submitDraft">存为草稿</view>
+      <view class="submit-btn confirm" :class="{ disabled: submitting }" @tap="submitApply">{{ submitting ? '提交中...' : '提交申请' }}</view>
     </view>
   </view>
 </template>
@@ -56,6 +56,7 @@
 <script>
 import { useSettingsStore } from '../../store/settings'
 import { createPurchaseRequest } from '../../api/purchase'
+import { getFuneralCase, getFuneralPurchaseItems, saveFuneralCase, setFuneralLinkTask } from '../../utils/funeral'
 import NavBar from '../../components/NavBar.vue'
 
 export default {
@@ -67,11 +68,31 @@ export default {
     const today = new Date().toISOString().slice(0, 10)
     return {
       form: { orderDate: today, remark: '' },
-      items: [{ itemName: '', quantity: 1, unit: '件', remark: '' }]
+      items: [{ itemName: '', quantity: 1, unit: '件', remark: '' }],
+      funeralCaseId: '',
+      submitting: false
+    }
+  },
+  onLoad(options = {}) {
+    if (options.source === 'funeral' && options.caseId) {
+      this.applyFuneralTemplate(options.caseId)
     }
   },
 
   methods: {
+    applyFuneralTemplate(caseId) {
+      const record = getFuneralCase(caseId)
+      if (!record) return
+      this.funeralCaseId = record.id
+      this.items = getFuneralPurchaseItems()
+      this.form.remark = [
+        `白事档案：${record.caseNo}`,
+        `逝者：${record.deceasedName}`,
+        record.roomNo ? `房间/床位：${record.roomNo}` : '',
+        '请按家属意愿和实际库存调整采购清单。'
+      ].filter(Boolean).join('\n')
+    },
+
     validate() {
       if (!this.form.orderDate) {
         uni.showToast({ title: '请选择采购日期', icon: 'none' })
@@ -85,19 +106,36 @@ export default {
     },
 
     async submitDraft() {
-      if (!this.validate()) return
-      const data = { ...this.form, items: this.items, status: 'draft' }
-      await createPurchaseRequest(data).catch(() => {})
-      uni.showToast({ title: '草稿已保存', icon: 'success' })
-      setTimeout(() => uni.navigateBack(), 1000)
+      await this.submitRequest('draft')
     },
 
     async submitApply() {
-      if (!this.validate()) return
-      const data = { ...this.form, items: this.items, status: 'pending' }
-      await createPurchaseRequest(data).catch(() => {})
-      uni.showToast({ title: '申请已提交', icon: 'success' })
-      setTimeout(() => uni.navigateBack(), 1000)
+      await this.submitRequest('pending')
+    },
+
+    async submitRequest(status) {
+      if (this.submitting || !this.validate()) return
+      this.submitting = true
+      const data = {
+        ...this.form,
+        items: this.items.map((item) => ({ ...item })),
+        status,
+        source: this.funeralCaseId ? 'funeral' : undefined,
+        sourceId: this.funeralCaseId || undefined
+      }
+      try {
+        await createPurchaseRequest(data)
+        if (status === 'pending' && this.funeralCaseId) {
+          const record = getFuneralCase(this.funeralCaseId)
+          if (record) saveFuneralCase(setFuneralLinkTask(record, 'funeral-purchase', true))
+        }
+        uni.showToast({ title: status === 'draft' ? '草稿已保存' : '申请已提交', icon: 'success' })
+        setTimeout(() => uni.navigateBack(), 1000)
+      } catch (_) {
+        uni.showToast({ title: status === 'draft' ? '草稿保存失败，请重试' : '申请提交失败，请重试', icon: 'none' })
+      } finally {
+        this.submitting = false
+      }
     }
   }
 }
@@ -169,5 +207,12 @@ export default {
   font-size: var(--font-md, 28rpx); font-weight: 600;
   &.draft   { background: var(--bg-page); color: var(--text-regular); border: 1rpx solid var(--border-color); }
   &.confirm { background: var(--primary-color); color: #fff; }
+  &.disabled { opacity: 0.55; }
+}
+
+@media screen and (min-width: 768px) {
+  .form-card { max-width: 960rpx; margin-right: auto; margin-left: auto; }
+  .submit-bar { justify-content: center; }
+  .submit-btn { flex: 0 1 420rpx; }
 }
 </style>

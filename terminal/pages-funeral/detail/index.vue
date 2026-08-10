@@ -63,6 +63,32 @@
         </view>
       </view>
 
+      <view class="section-heading page-heading">
+        <view>
+          <text class="section-title">联动事项</text>
+          <text class="section-subtitle">护理、健康、设备、采购和费用同步闭环</text>
+        </view>
+        <view class="text-action" @tap="goToPurchase"><text class="iconfont icon-add"></text><text>采购申请</text></view>
+      </view>
+      <view class="link-task-list">
+        <view v-for="task in record.linkTasks" :key="task.id" class="link-task-row" :class="{ done: task.completed }">
+          <view class="link-task-icon" @tap="toggleLinkTask(task)">
+            <text v-if="task.completed" class="iconfont icon-check"></text>
+            <text v-else>{{ moduleLabel(task.module).slice(0, 1) }}</text>
+          </view>
+          <view class="link-task-body">
+            <view class="link-task-title-line">
+              <text class="link-task-title">{{ task.title }}</text>
+              <text class="module-tag">{{ moduleLabel(task.module) }}</text>
+              <text v-if="task.requiredBeforeArchive" class="required-tag">归档前必需</text>
+            </view>
+            <text class="link-task-desc">{{ task.description }}</text>
+            <text v-if="task.completedAt" class="step-time">完成于 {{ formatDateTime(task.completedAt) }}</text>
+          </view>
+          <view class="step-action" @tap="toggleLinkTask(task)">{{ task.completed ? '撤销' : '完成' }}</view>
+        </view>
+      </view>
+
       <view class="section-heading page-heading material-heading">
         <view>
           <text class="section-title">相关证明</text>
@@ -160,7 +186,9 @@ import {
   FUNERAL_PROOF_TYPES,
   funeralProgress,
   getFuneralCase,
+  missingArchiveLinkTasks,
   saveFuneralCase,
+  setFuneralLinkTask,
   setFuneralStep
 } from '../../utils/funeral'
 import {
@@ -209,6 +237,10 @@ export default {
     loadRecord() { this.record = getFuneralCase(this.recordId) },
     persist() { this.record = saveFuneralCase(this.record) },
     goToStorage() { uni.navigateTo({ url: '/pages-funeral/storage/index' }) },
+    goToPurchase() { uni.navigateTo({ url: `/pages-purchase/apply/index?source=funeral&caseId=${this.record.id}` }) },
+    moduleLabel(module) {
+      return { care: '护理', health: '健康', device: '设备', purchase: '采购', fee: '费用' }[module] || '联动'
+    },
     formatDateTime(value) { return value ? String(value).replace('T', ' ').slice(0, 16) : '' },
     formatSize(value) {
       const size = Number(value) || 0
@@ -227,12 +259,33 @@ export default {
           })
         }
       }
+      if (!step.completed && step.id === 'archive') {
+        const missingLinks = missingArchiveLinkTasks(this.record)
+        if (missingLinks.length) {
+          return uni.showModal({
+            title: '联动事项未完成',
+            content: `请先完成：${missingLinks.map((item) => item.title).join('、')}`,
+            showCancel: false
+          })
+        }
+      }
       uni.showModal({
         title: step.completed ? '撤销完成状态' : '确认步骤完成',
         content: step.completed ? `确认将“${step.title}”恢复为待办理？` : `确认“${step.title}”已完成？`,
         success: ({ confirm }) => {
           if (!confirm) return
           this.record = setFuneralStep(this.record, step.id, !step.completed)
+          this.persist()
+        }
+      })
+    },
+    toggleLinkTask(task) {
+      uni.showModal({
+        title: task.completed ? '撤销联动事项' : '确认联动事项',
+        content: task.completed ? `确认将“${task.title}”恢复为待处理？` : `确认“${task.title}”已处理完成？`,
+        success: ({ confirm }) => {
+          if (!confirm) return
+          this.record = setFuneralLinkTask(this.record, task.id, !task.completed)
           this.persist()
         }
       })
@@ -354,6 +407,14 @@ export default {
 .step-description { display: block; color: var(--text-secondary); font-size: var(--font-xs, 20rpx); line-height: 1.55; margin-top: 6rpx; }
 .step-time { display: block; color: #27855c; font-size: 18rpx; margin-top: 6rpx; }
 .step-action { flex: 0 0 76rpx; text-align: right; color: #52606d; font-size: var(--font-xs, 20rpx); padding-top: 6rpx; }
+.link-task-list { margin: 0 24rpx 24rpx; background: var(--bg-card); border-radius: 8rpx; box-shadow: var(--shadow); padding: 4rpx 22rpx; }
+.link-task-row { display: flex; align-items: flex-start; gap: 18rpx; padding: 24rpx 0; border-bottom: 1rpx solid var(--divider-color); &:last-child { border-bottom: 0; } &.done .link-task-title { color: #27855c; } }
+.link-task-icon { flex: 0 0 52rpx; width: 52rpx; height: 52rpx; border-radius: 8rpx; display: flex; align-items: center; justify-content: center; background: #eef2f5; color: #52606d; font-size: 20rpx; font-weight: 700; .done & { color: #fff; background: #27855c; } .iconfont { font-size: 24rpx; } }
+.link-task-body { flex: 1; min-width: 0; }
+.link-task-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8rpx; }
+.link-task-title { color: var(--text-primary); font-size: var(--font-sm, 24rpx); font-weight: 600; }
+.link-task-desc { display: block; color: var(--text-secondary); font-size: var(--font-xs, 20rpx); line-height: 1.55; margin-top: 6rpx; }
+.module-tag { color: #52606d; background: #eef2f5; border-radius: 4rpx; padding: 3rpx 8rpx; font-size: 18rpx; }
 .material-heading { padding-top: 2rpx; }
 .storage-location { margin: 0 24rpx 16rpx; padding: 18rpx 22rpx; display: flex; align-items: center; gap: 14rpx; background: #eef2f5; border-radius: 8rpx; color: #52606d; > .iconfont { font-size: 34rpx; } > view { flex: 1; min-width: 0; } .arrow { font-size: 24rpx; } }
 .location-label { display: block; color: #34404b; font-size: var(--font-xs, 20rpx); font-weight: 600; }

@@ -49,7 +49,10 @@
         <view class="task-body">
           <view class="task-top">
             <text class="task-name">{{ task.taskName }}</text>
-            <view class="task-tag" :class="getStatusClass(task.status)">{{ getStatusText(task.status) }}</view>
+            <view class="task-tags">
+              <view v-if="task.source === 'funeral'" class="source-tag">白事联动</view>
+              <view class="task-tag" :class="getStatusClass(task.status)">{{ getStatusText(task.status) }}</view>
+            </view>
           </view>
           <view class="task-info">
             <text class="iconfont icon-elder"></text>
@@ -60,10 +63,10 @@
           <text class="task-desc">{{ task.remark }}</text>
         </view>
         <!-- 执行按钮 -->
-        <view v-if="task.status === 'pending'" class="action-btn btn-start" @tap.stop="startTask(task)">
+        <view v-if="task.status === 'pending' && task.source !== 'funeral'" class="action-btn btn-start" @tap.stop="startTask(task)">
           <text>开始</text>
         </view>
-        <view v-else-if="task.status === 'doing'" class="action-btn btn-done" @tap.stop="completeTask(task)">
+        <view v-else-if="task.status === 'doing' || (task.status === 'pending' && task.source === 'funeral')" class="action-btn btn-done" @tap.stop="completeTask(task)">
           <text>完成</text>
         </view>
       </view>
@@ -76,6 +79,7 @@
 <script>
 import { useSettingsStore } from '../../store/settings'
 import { getCareTaskList, startTask as apiStart, completeTask as apiComplete } from '../../api/care'
+import { completeFuneralCareTask, getFuneralCareTasks } from '../../utils/funeral'
 import NavBar       from '../../components/NavBar.vue'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 
@@ -105,14 +109,18 @@ export default {
     doingCount()   { return this.tasks.filter(t => t.status === 'doing').length },
     doneCount()    { return this.tasks.filter(t => t.status === 'done').length }
   },
-  onLoad()  { this.loadData() },
   onShow()  { this.loadData() },
   methods: {
     async loadData() {
       this.loading = true
       try {
         const res = await getCareTaskList({ pageSize: 100 })
-        this.tasks = res.rows || res.data || []
+        const responseTasks = res.rows || res.data || []
+        const remoteTasks = Array.isArray(responseTasks) ? responseTasks : []
+        this.tasks = [...getFuneralCareTasks(), ...remoteTasks]
+      } catch (_) {
+        this.tasks = getFuneralCareTasks()
+        uni.showToast({ title: '护理任务加载失败，已显示本地联动事项', icon: 'none' })
       } finally { this.loading = false }
     },
     getStatusClass(s) {
@@ -122,12 +130,20 @@ export default {
       return { pending: '待执行', doing: '执行中', done: '已完成' }[s] || s
     },
     viewTask(task) {
+      if (task.source === 'funeral') {
+        uni.navigateTo({ url: `/pages-funeral/detail/index?id=${task.funeralCaseId}` })
+        return
+      }
       uni.navigateTo({ url: `/pages-care/records/index?taskId=${task.taskId}` })
     },
     async startTask(task) {
-      await apiStart(task.taskId).catch(() => {})
-      task.status = 'doing'
-      uni.showToast({ title: '任务已开始', icon: 'success' })
+      try {
+        await apiStart(task.taskId)
+        task.status = 'doing'
+        uni.showToast({ title: '任务已开始', icon: 'success' })
+      } catch (_) {
+        uni.showToast({ title: '任务开始失败，请稍后重试', icon: 'none' })
+      }
     },
     async completeTask(task) {
       uni.showModal({
@@ -136,9 +152,23 @@ export default {
         placeholderText: '输入完成备注（可选）',
         success: async ({ confirm, content }) => {
           if (!confirm) return
-          await apiComplete(task.taskId, content || '').catch(() => {})
-          task.status = 'done'
-          uni.showToast({ title: '任务已完成', icon: 'success' })
+          if (task.source === 'funeral') {
+            const updatedRecord = completeFuneralCareTask(task.taskId)
+            if (!updatedRecord) {
+              uni.showToast({ title: '联动事项更新失败', icon: 'none' })
+              return
+            }
+            task.status = 'done'
+            uni.showToast({ title: '联动事项已完成', icon: 'success' })
+            return
+          }
+          try {
+            await apiComplete(task.taskId, content || '')
+            task.status = 'done'
+            uni.showToast({ title: '任务已完成', icon: 'success' })
+          } catch (_) {
+            uni.showToast({ title: '任务完成失败，请稍后重试', icon: 'none' })
+          }
         }
       })
     }
@@ -193,9 +223,11 @@ export default {
   }
 }
 
-.task-body { flex: 1; }
-.task-top  { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10rpx; }
-.task-name { font-size: var(--font-md, 28rpx); font-weight: 600; color: var(--text-primary); }
+.task-body { flex: 1; min-width: 0; }
+.task-top  { display: flex; justify-content: space-between; align-items: center; gap: 12rpx; margin-bottom: 10rpx; }
+.task-name { min-width: 0; flex: 1; font-size: var(--font-md, 28rpx); font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.task-tags { display: flex; align-items: center; gap: 8rpx; flex-wrap: wrap; justify-content: flex-end; }
+.source-tag { padding: 4rpx 12rpx; border-radius: 16rpx; font-size: var(--font-xs, 20rpx); background: #eef2f5; color: #52606d; }
 
 .task-tag {
   padding: 4rpx 16rpx; border-radius: 16rpx; font-size: var(--font-xs, 20rpx);
@@ -210,12 +242,21 @@ export default {
   .info-text { font-size: var(--font-xs, 20rpx); color: var(--text-secondary); }
 }
 
-.task-desc { font-size: var(--font-xs, 20rpx); color: var(--text-secondary); }
+.task-desc { display: block; font-size: var(--font-xs, 20rpx); color: var(--text-secondary); line-height: 1.55; overflow-wrap: anywhere; }
 
 .action-btn {
   padding: 12rpx 24rpx; border-radius: 24rpx; font-size: var(--font-xs, 20rpx);
   font-weight: 600; white-space: nowrap; align-self: center;
   &.btn-start { background: var(--primary-light); color: var(--primary-color); }
   &.btn-done  { background: #e8f8f0; color: #27ae60; }
+}
+
+@media screen and (max-width: 420px) {
+  .task-card { flex-wrap: wrap; }
+  .task-left { flex: 0 0 auto; }
+  .task-top { align-items: flex-start; flex-direction: column; }
+  .task-tags { justify-content: flex-start; }
+  .task-info { flex-wrap: wrap; }
+  .action-btn { flex: 0 0 100%; text-align: center; border-radius: 12rpx; }
 }
 </style>
