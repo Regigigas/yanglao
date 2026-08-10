@@ -29,6 +29,11 @@ export function registerFeeHandlers(ipc: IpcMain, repo: FeeRepo): void {
   // 收款
   ipc.handle('fee:payment:list', (_e, elderlyId?: string, billId?: string) => repo.findPayments(elderlyId, billId))
   ipc.handle('fee:payment:create', (_e, data) => repo.insertPayment(data))
+  ipc.handle('invoice:list', (_e, elderlyId?: string) => repo.findInvoices(elderlyId))
+  ipc.handle('invoice:create', (_e, data) => repo.insertInvoice(data))
+  ipc.handle('invoice:update', (_e, { id, data }) => repo.updatePendingInvoice(id, data))
+  ipc.handle('invoice:issue', (_e, id: string) => { repo.issueInvoice(id); return { ok: true } })
+  ipc.handle('invoice:void', (_e, { id, remark }) => { repo.voidInvoice(id, remark); return { ok: true } })
 
   // 统计
   ipc.handle('fee:stats', (_e, month: string) => repo.getFinancialStats(month))

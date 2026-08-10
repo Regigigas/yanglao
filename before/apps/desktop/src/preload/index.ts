@@ -263,6 +263,7 @@ const api = {
     },
     stats: (month: string) => ipcRenderer.invoke('fee:stats', month),
   },
+  invoice: { list: (elderlyId?: string) => ipcRenderer.invoke('invoice:list', elderlyId), create: (data: unknown) => ipcRenderer.invoke('invoice:create', data), update: (id: string, data: unknown) => ipcRenderer.invoke('invoice:update', { id, data }), issue: (id: string) => ipcRenderer.invoke('invoice:issue', id), void: (id: string, remark?: string) => ipcRenderer.invoke('invoice:void', { id, remark }) },
 
   // ── 餐饮管理 ─────────────────────────────────────────────────
   meal: {

@@ -94,6 +94,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../views/fee/FeeView.vue'),
         meta: { title: '费用管理', icon: 'Wallet', menuKey: 'fee' },
       },
+      { path: 'invoice', name: 'Invoice', component: () => import('../views/invoice/InvoiceView.vue'), meta: { title: '发票管理', icon: 'Bill', menuKey: 'invoice' } },
       // ── 餐饮管理 ──────────────────────────────────
       {
         path: 'meal',

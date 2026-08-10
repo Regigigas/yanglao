@@ -532,6 +532,14 @@ export interface PaymentRecordRow {
   deleted_at: number | null;
 }
 
+export interface InvoiceRow {
+  id: string; invoice_no: string; bill_id: string; elderly_id: string; title: string;
+  tax_no: string | null; invoice_type: 'normal' | 'special'; amount: number; invoice_date: string;
+  status: 'pending' | 'issued' | 'voided'; email: string | null; operator: string | null;
+  applicant: string | null; remark: string | null;
+  created_at: number; updated_at: number; deleted_at: number | null;
+}
+
 // ─── 餐饮管理 ─────────────────────────────────────────────────
 
 export interface MealMenuRow {

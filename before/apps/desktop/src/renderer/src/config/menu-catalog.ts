@@ -111,6 +111,7 @@ export const MENU_CATALOG: MenuCatalogItem[] = [
     icon: 'Wallet',
     group: 'business',
   },
+  { key: 'invoice', label: '发票管理', icon: 'Bill', group: 'business' },
   {
     key: 'report',
     label: '统计报表',
@@ -215,6 +216,8 @@ export const MENU_CATALOG: MenuCatalogItem[] = [
 
 /** 按钮权限目录：key 格式 "菜单key:动作"，角色的 button_keys 存这些 key 的子集 */
 export const BUTTON_CATALOG: { key: string; label: string }[] = [
+  { key: 'invoice:create', label: '开具发票' },
+  { key: 'invoice:void', label: '作废发票' },
   { key: 'elderly:create', label: '新增老人' },
   { key: 'elderly:delete', label: '删除老人' },
   { key: 'user:create', label: '新增账号' },

@@ -5,7 +5,7 @@ const ALLOWED_TABLES = new Set([
   'elderly', 'family_contact', 'health_profile', 'vital_signs',
   'medication_order', 'medication_record', 'medical_visit', 'admission',
   'leave_record', 'discharge', 'care_assessment', 'care_plan', 'care_record',
-  'fee_item', 'deposit_record', 'monthly_bill', 'bill_detail', 'payment_record',
+  'fee_item', 'deposit_record', 'monthly_bill', 'bill_detail', 'payment_record', 'invoice',
   'meal_menu', 'meal_record', 'nutrition_plan', 'activity', 'activity_attendance',
   'contract', 'building', 'room', 'bed', 'task_reminder', 'iot_device_alert', 'announcement',
 ])

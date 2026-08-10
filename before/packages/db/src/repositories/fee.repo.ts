@@ -9,6 +9,7 @@ import type {
   MonthlyBillRow,
   BillDetailRow,
   PaymentRecordRow,
+  InvoiceRow,
 } from '../schema'
 
 type NewBillDetail = Pick<BillDetailRow, 'fee_item_id' | 'item_name' | 'quantity' | 'unit_price' | 'amount' | 'remark'>
@@ -265,5 +266,66 @@ export class FeeRepo {
       )
       .get(month) as { total_billed: number; total_paid: number; overdue: number }
     return row
+  }
+
+  findInvoices(elderlyId?: string): InvoiceRow[] {
+    const sql = `SELECT * FROM invoice WHERE deleted_at IS NULL${elderlyId ? ' AND elderly_id=?' : ''} ORDER BY invoice_date DESC, created_at DESC`
+    return (elderlyId ? this.db.prepare<[string], InvoiceRow>(sql).all(elderlyId) : this.db.prepare<[], InvoiceRow>(sql).all()) as InvoiceRow[]
+  }
+
+  insertInvoice(data: Omit<InvoiceRow, 'id' | 'created_at' | 'updated_at' | 'deleted_at'>): InvoiceRow {
+    if (!data.invoice_no.trim() || !data.title.trim()) throw new Error('发票号码和抬头不能为空')
+    if (!Number.isFinite(data.amount) || data.amount <= 0) throw new Error('开票金额必须大于 0')
+    const now = Date.now(); const row: InvoiceRow = { ...data, status: 'pending', id: nanoid(), created_at: now, updated_at: now, deleted_at: null }
+    this.db.transaction(() => {
+      const bill = this.db.prepare<[string], MonthlyBillRow>(`SELECT * FROM monthly_bill WHERE id=? AND deleted_at IS NULL`).get(data.bill_id)
+      if (!bill || bill.elderly_id !== data.elderly_id) throw new Error('账单不存在或与老人不匹配')
+      if (bill.status !== 'paid') throw new Error('账单未结清，不能开具发票')
+      if (Math.abs(data.amount - bill.paid) > 0.000001) throw new Error('开票金额必须等于账单实收金额')
+      this.db.prepare(`INSERT INTO invoice (id,invoice_no,bill_id,elderly_id,title,tax_no,invoice_type,amount,invoice_date,status,email,operator,applicant,remark,created_at,updated_at,deleted_at) VALUES (@id,@invoice_no,@bill_id,@elderly_id,@title,@tax_no,@invoice_type,@amount,@invoice_date,@status,@email,@operator,@applicant,@remark,@created_at,@updated_at,@deleted_at)`).run(row)
+      this.writeInvoiceChange('INSERT', row)
+    })(); return row
+  }
+
+  updatePendingInvoice(id: string, data: { title?: string; tax_no?: string | null; applicant?: string | null; remark?: string | null }): InvoiceRow {
+    const allowedKeys = new Set(['title', 'tax_no', 'applicant', 'remark'])
+    if (Object.keys(data).some(key => !allowedKeys.has(key))) throw new Error('待处理发票只允许修改抬头、税号、申请人和备注')
+    if (data.title !== undefined && !data.title.trim()) throw new Error('发票抬头不能为空')
+    const now = Date.now()
+    return this.db.transaction(() => {
+      const current = this.db.prepare<[string], InvoiceRow>(`SELECT * FROM invoice WHERE id=? AND deleted_at IS NULL`).get(id)
+      if (!current) throw new Error('发票不存在或已删除')
+      if (current.status !== 'pending') throw new Error('只有待处理发票可以编辑')
+      const next: InvoiceRow = { ...current, ...data, updated_at: now }
+      this.db.prepare(`UPDATE invoice SET title=@title,tax_no=@tax_no,applicant=@applicant,remark=@remark,updated_at=@updated_at WHERE id=@id`).run(next)
+      this.writeInvoiceChange('UPDATE', next)
+      return next
+    })()
+  }
+
+  issueInvoice(id: string): void {
+    const now = Date.now()
+    this.db.transaction(() => {
+      const current = this.db.prepare<[string], InvoiceRow>(`SELECT * FROM invoice WHERE id=? AND deleted_at IS NULL`).get(id)
+      if (!current) throw new Error('发票不存在或已删除')
+      if (current.status !== 'pending') throw new Error('只有待处理发票可以确认开具')
+      const next: InvoiceRow = { ...current, status: 'issued', updated_at: now }
+      this.db.prepare(`UPDATE invoice SET status='issued', updated_at=? WHERE id=?`).run(now, id)
+      this.writeInvoiceChange('UPDATE', next)
+    })()
+  }
+
+  voidInvoice(id: string, remark?: string): void {
+    const now = Date.now(); this.db.transaction(() => {
+      const current = this.db.prepare<[string], InvoiceRow>(`SELECT * FROM invoice WHERE id=? AND deleted_at IS NULL`).get(id)
+      if (!current) throw new Error('发票不存在或已删除'); if (current.status === 'voided') return
+      const next: InvoiceRow = { ...current, status: 'voided', remark: remark || current.remark, updated_at: now }
+      this.db.prepare(`UPDATE invoice SET status='voided', remark=?, updated_at=? WHERE id=?`).run(next.remark, now, id)
+      this.writeInvoiceChange('UPDATE', next)
+    })()
+  }
+
+  private writeInvoiceChange(operation: 'INSERT' | 'UPDATE', row: InvoiceRow): void {
+    this.db.prepare(`INSERT INTO change_log (id,table_name,record_id,operation,payload,created_at,synced,synced_at) VALUES (?,?,?,?,?,?,0,NULL)`).run(nanoid(), 'invoice', row.id, operation, JSON.stringify(row), Date.now())
   }
 }
