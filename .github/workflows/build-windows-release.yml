@@ -37,6 +37,12 @@ jobs:
         working-directory: before
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare Electron runtime
+        working-directory: before/apps/desktop
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+        run: node node_modules/electron/install.js
+
       - name: Build Windows installer
         working-directory: before
         run: pnpm build:win
