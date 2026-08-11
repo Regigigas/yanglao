@@ -47,11 +47,21 @@ jobs:
         working-directory: before
         run: pnpm build:win
 
+      - name: Resolve release tag
+        shell: bash
+        env:
+          REQUESTED_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ -n "$REQUESTED_RELEASE_TAG" ]]; then
+            echo "RELEASE_TAG=$REQUESTED_RELEASE_TAG" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_TAG=${GITHUB_REF_NAME%%-retry.*}" >> "$GITHUB_ENV"
+          fi
+
       - name: Publish release assets
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes
           gh release upload "$RELEASE_TAG" before/apps/desktop/release/*.exe before/apps/desktop/release/*.blockmap --clobber
