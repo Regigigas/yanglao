@@ -8,6 +8,7 @@ import { BasePage, BaseTable } from '@yanglao/ui'
 import { useFeeStore } from '../../stores/fee.store'
 import { useElderlyStore } from '../../stores/elderly.store'
 import { ref, h, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { formatDateTime } from '@yanglao/core'
 import { usePageRefresh } from '../../composables/usePageRefresh'
 import type { FeeItemRow, MonthlyBillRow, DepositRecordRow, BillDetailRow, PaymentRecordRow } from '@yanglao/db'
@@ -15,6 +16,7 @@ import type { FeeItemRow, MonthlyBillRow, DepositRecordRow, BillDetailRow, Payme
 const feeStore = useFeeStore()
 const elderlyStore = useElderlyStore()
 const message = useMessage()
+const router = useRouter()
 
 const selectedElderlyId = ref<string | null>(null)
 const elderlyOptions = computed(() =>
@@ -205,9 +207,10 @@ const billColumns = [
     const [type, label] = map[r.status] ?? ['default', r.status]
     return h(NTag, { type }, () => label)
   }},
-  { title: '操作', key: 'actions', width: 150, render: (r: MonthlyBillRow) => h(NSpace, null, { default: () => [
+  { title: '操作', key: 'actions', width: 220, render: (r: MonthlyBillRow) => h(NSpace, null, { default: () => [
     h(NButton, { size: 'small', onClick: () => openBillDetail(r) }, '明细'),
     h(NButton, { size: 'small', type: 'primary', disabled: r.status === 'paid', onClick: () => openPay(r) }, '收款'),
+    h(NButton, { size: 'small', type: 'success', disabled: r.status !== 'paid', onClick: () => router.push({ name: 'Invoice', query: { billId: r.id } }) }, '开票'),
   ] }) },
 ]
 

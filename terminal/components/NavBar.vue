@@ -3,7 +3,7 @@
   <view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px', background: bgColor }">
     <view class="nav-inner" :style="{ height: navHeight + 'px' }">
       <!-- 左侧区域：返回按钮 / 自定义 -->
-      <view class="nav-left" @tap="handleBack">
+      <view class="nav-left" :class="{ 'can-back': showBack }" @tap="handleLeftTap">
         <slot name="left">
           <text v-if="showBack" class="iconfont icon-back nav-icon"></text>
         </slot>
@@ -55,6 +55,10 @@ export default {
   },
 
   methods: {
+    handleLeftTap() {
+      if (!this.showBack) return
+      this.handleBack()
+    },
     handleBack() {
       this.$emit('back')
       if (this.manualBack) return
@@ -85,8 +89,13 @@ export default {
 
 .nav-left, .nav-right {
   width: 80rpx;
+  min-height: 44px;
   display: flex;
   align-items: center;
+}
+
+.nav-left.can-back {
+  cursor: pointer;
 }
 
 .nav-right {

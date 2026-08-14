@@ -1,5 +1,5 @@
 <template>
-  <view :class="['page-container', settingsStore.pageClass()]">
+  <view :class="['page-container', 'has-bottom-tab', settingsStore.pageClass()]">
     <!-- 自定义顶部导航 -->
     <NavBar title="养老护理终端">
       <template #right>
@@ -121,6 +121,7 @@ export default {
         { label: '护理任务', icon: 'icon-task',     path: '/pages-care/tasks/index',      color: '#4A90D9' },
         { label: '护理记录', icon: 'icon-record',   path: '/pages-care/records/index',    color: '#9b59b6' },
         { label: '白事管理', icon: 'icon-checklist', path: '/pages-funeral/index/index',   color: '#52606d' },
+        { label: '利润计算', icon: 'icon-task', path: '/pages-funeral/profit/index', color: '#23744f' },
         { label: '设备连接', icon: 'icon-bluetooth',path: '/pages-device/connect/index',  color: '#2ecc71' },
         { label: '设备列表', icon: 'icon-device',   path: '/pages-device/list/index',     color: '#1abc9c' },
         { label: '3D楼栋',   icon: 'icon-bed',      path: '/pages-scene/building/index',  color: '#3f7f67' },
@@ -144,7 +145,6 @@ export default {
     this.userStore.restoreFromStorage()
     this.updateTime()
     this.timer = setInterval(this.updateTime, 1000)
-    this.refreshData()
   },
 
   onUnload() {
@@ -152,7 +152,7 @@ export default {
   },
 
   onShow() {
-    this.healthStore.fetchAlerts()
+    this.refreshData()
   },
 
   methods: {
@@ -359,4 +359,16 @@ export default {
 
 .nav-btn { padding: 10rpx; }
 .nav-right-icon { font-size: 40rpx; color: #fff; }
+
+.font-xl .quick-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media screen and (max-width: 360px) {
+  .quick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .conn-status { gap: 12rpx; }
+  .conn-item { flex: 1; justify-content: center; padding-right: 8rpx; padding-left: 8rpx; }
+}
 </style>

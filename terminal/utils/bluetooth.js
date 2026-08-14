@@ -55,6 +55,7 @@ export function startScan(services = []) {
       success: resolve,
       fail(err) {
         store.btScanning = false
+        uni.offBluetoothDeviceFound()
         reject(new Error(err.errMsg || '扫描启动失败'))
       }
     })

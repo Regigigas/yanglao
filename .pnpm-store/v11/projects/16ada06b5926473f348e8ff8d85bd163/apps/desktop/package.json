@@ -1,6 +1,6 @@
 {
   "name": "@yanglao/desktop",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "养老管理系统 Electron 桌面端",
   "author": "Regigigas",

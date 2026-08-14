@@ -1,4 +1,5 @@
 import storage from './storage'
+import Big from 'big.js'
 
 const CASES_KEY = 'funeral_cases'
 
@@ -116,7 +117,142 @@ function normalizeRecord(record) {
     ...record,
     steps: Array.isArray(record.steps) ? record.steps : FUNERAL_STEPS.map((step) => ({ ...step, completed: false, completedAt: '' })),
     proofs: Array.isArray(record.proofs) ? record.proofs : [],
-    linkTasks: normalizeLinkTasks(record)
+    linkTasks: normalizeLinkTasks(record),
+    finance: normalizeFuneralFinance(record.finance)
+  }
+}
+
+function bigValue(value) {
+  try { return new Big(value === '' || value === null || value === undefined ? 0 : value) } catch (_) { return new Big(0) }
+}
+
+function cents(value) {
+  const amount = bigValue(value)
+  return amount.gte(0) ? amount.round(0, Big.roundHalfUp).toFixed(0) : '0'
+}
+
+function hasMoneyValue(value) {
+  if (value === '' || value === null || value === undefined) return false
+  try { return new Big(value).gte(0) } catch (_) { return false }
+}
+
+export function normalizeFuneralFinance(finance = {}) {
+  const isCent = finance?.amountUnit === 'cent'
+  const toCent = (value) => isCent ? cents(value) : yuanToCent(value)
+  const intermediateCosts = Array.isArray(finance?.intermediateCosts)
+    ? finance.intermediateCosts.map((item, index) => ({
+      id: item.id || `supplement-${index}`,
+      name: String(item.name || '').trim(),
+      amount: toCent(item.amount),
+      occurredAt: String(item.occurredAt || ''),
+      status: 'supplemented',
+      createdAt: String(item.createdAt || item.updatedAt || ''),
+      updatedAt: String(item.updatedAt || item.createdAt || '')
+    }))
+    : []
+  return {
+    amountUnit: 'cent',
+    estimatedRevenue: toCent(finance?.estimatedRevenue),
+    actualRevenue: toCent(finance?.actualRevenue),
+    hasEstimatedRevenue: typeof finance?.hasEstimatedRevenue === 'boolean' ? finance.hasEstimatedRevenue : hasMoneyValue(finance?.estimatedRevenue),
+    hasActualRevenue: typeof finance?.hasActualRevenue === 'boolean' ? finance.hasActualRevenue : hasMoneyValue(finance?.actualRevenue),
+    initialCost: toCent(finance?.initialCost),
+    intermediateCosts
+  }
+}
+
+export function yuanToCent(value) {
+  if (!hasMoneyValue(value)) return '0'
+  return new Big(value).times(100).round(0, Big.roundHalfUp).toFixed(0)
+}
+
+export function isValidYuanAmount(value, allowEmpty = false) {
+  if (value === '' || value === null || value === undefined) return allowEmpty
+  return /^\d+(\.\d{1,2})?$/.test(String(value).trim())
+}
+
+export function centToYuan(value) {
+  return bigValue(value).div(100).toFixed(2)
+}
+
+export function addCentAmounts(...values) {
+  return values.reduce((total, value) => total.plus(bigValue(value)), new Big(0)).toFixed(0)
+}
+
+export function centToChineseUppercase(value) {
+  const amount = bigValue(value).round(0, Big.roundHalfUp)
+  const negative = amount.lt(0)
+  const absolute = amount.abs()
+  const yuan = absolute.div(100).round(0, Big.roundDown).toFixed(0)
+  const remainder = Number(absolute.mod(100).toFixed(0))
+  const digits = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖']
+  const smallUnits = ['', '拾', '佰', '仟']
+  const sectionUnits = ['', '万', '亿', '兆', '京', '垓', '秭', '穰', '沟', '涧', '正', '载']
+
+  function sectionText(section) {
+    let result = ''
+    let zero = false
+    for (let index = 3; index >= 0; index -= 1) {
+      const divisor = 10 ** index
+      const digit = Math.floor(section / divisor) % 10
+      if (digit) {
+        if (zero && result) result += digits[0]
+        result += digits[digit] + smallUnits[index]
+        zero = false
+      } else if (result) zero = true
+    }
+    return result
+  }
+
+  const sections = []
+  for (let end = yuan.length; end > 0; end -= 4) sections.unshift(Number(yuan.slice(Math.max(0, end - 4), end)))
+  let integerText = ''
+  let pendingZero = false
+  sections.forEach((section, index) => {
+    const unitIndex = sections.length - index - 1
+    if (!section) {
+      if (integerText) pendingZero = true
+      return
+    }
+    if (integerText && (pendingZero || section < 1000)) integerText += digits[0]
+    integerText += sectionText(section) + (sectionUnits[unitIndex] ?? `10^${unitIndex * 4}`)
+    pendingZero = false
+  })
+  if (!integerText) integerText = digits[0]
+
+  const jiao = Math.floor(remainder / 10)
+  const fen = remainder % 10
+  let decimalText = ''
+  if (jiao) decimalText += `${digits[jiao]}角`
+  if (!jiao && fen) decimalText += digits[0]
+  if (fen) decimalText += `${digits[fen]}分`
+  if (!decimalText) decimalText = '整'
+  return `人民币${negative ? '负' : ''}${integerText}元${decimalText}`
+}
+
+export function convertFuneralFinanceYuanToCent(finance = {}) {
+  return {
+    ...finance,
+    amountUnit: 'cent',
+    estimatedRevenue: yuanToCent(finance.estimatedRevenue),
+    actualRevenue: yuanToCent(finance.actualRevenue),
+    initialCost: yuanToCent(finance.initialCost),
+    intermediateCosts: Array.isArray(finance.intermediateCosts)
+      ? finance.intermediateCosts.map((item) => ({ ...item, amount: yuanToCent(item.amount) }))
+      : []
+  }
+}
+
+export function calculateFuneralProfit(finance) {
+  const normalized = normalizeFuneralFinance(finance)
+  const intermediateCost = addCentAmounts(...normalized.intermediateCosts.map((item) => item.amount))
+  const totalCost = addCentAmounts(normalized.initialCost, intermediateCost)
+  return {
+    ...normalized,
+    intermediateCost,
+    totalCost,
+    estimatedProfit: normalized.hasEstimatedRevenue ? new Big(normalized.estimatedRevenue).minus(totalCost).toFixed(0) : null,
+    actualProfit: normalized.hasActualRevenue ? new Big(normalized.actualRevenue).minus(totalCost).toFixed(0) : null
   }
 }
 
@@ -156,6 +292,7 @@ export function createFuneralCase(input, timestamp = Date.now()) {
     steps: FUNERAL_STEPS.map((step) => ({ ...step, completed: false, completedAt: '' })),
     proofs: [],
     linkTasks: createLinkTasks(timestamp),
+    finance: normalizeFuneralFinance(),
     createdAt: iso,
     updatedAt: iso
   }
@@ -170,11 +307,23 @@ export function funeralProgress(record) {
 export function setFuneralStep(record, stepId, completed, timestamp = Date.now()) {
   const updatedAt = new Date(timestamp).toISOString()
   const current = normalizeRecord(record)
-  const steps = current.steps.map((step) => step.id === stepId
-    ? { ...step, completed, completedAt: completed ? updatedAt : '' }
-    : step)
+  const targetIndex = current.steps.findIndex((step) => step.id === stepId)
+  const steps = current.steps.map((step, index) => {
+    if (index === targetIndex) return { ...step, completed, completedAt: completed ? updatedAt : '' }
+    if (!completed && targetIndex >= 0 && index > targetIndex) {
+      return { ...step, completed: false, completedAt: '' }
+    }
+    return step
+  })
   const status = steps.every((step) => step.completed) ? 'completed' : 'processing'
   return { ...current, steps, status, updatedAt }
+}
+
+export function missingPreviousFuneralSteps(record, stepId) {
+  const current = normalizeRecord(record)
+  const targetIndex = current.steps.findIndex((step) => step.id === stepId)
+  if (targetIndex <= 0) return []
+  return current.steps.slice(0, targetIndex).filter((step) => !step.completed)
 }
 
 export function setFuneralLinkTask(record, taskId, completed, timestamp = Date.now()) {

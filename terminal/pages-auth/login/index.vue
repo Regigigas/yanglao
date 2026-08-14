@@ -50,7 +50,7 @@
         />
       </view>
 
-      <button class="login-btn" :loading="loading" @tap="handleLogin">
+      <button class="login-btn" :loading="loading" :disabled="loading" @tap="handleLogin">
         登 录
       </button>
 
@@ -58,7 +58,7 @@
     </view>
 
     <!-- 版本信息 -->
-    <text class="version-text">v1.0.0 · 养老管理系统终端</text>
+    <text class="version-text">v1.1.0 · 养老管理系统终端</text>
   </view>
 </template>
 
@@ -93,6 +93,7 @@ export default {
 
   methods: {
     async handleLogin() {
+      if (this.loading) return
       if (!this.form.username.trim()) {
         return uni.showToast({ title: '请输入用户名', icon: 'none' })
       }
@@ -130,6 +131,10 @@ export default {
   flex-direction: column;
   align-items: center;
   padding: 0 48rpx;
+  padding-top: constant(safe-area-inset-top);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: constant(safe-area-inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .logo-area {
@@ -233,5 +238,15 @@ export default {
   padding: 40rpx 0 60rpx;
   font-size: var(--font-xs, 20rpx);
   color: rgba(255,255,255,0.5);
+}
+
+@media screen and (max-width: 360px), screen and (max-height: 700px) {
+  .login-page { padding-right: 28rpx; padding-left: 28rpx; }
+  .logo-area { padding: 48rpx 0 32rpx; }
+  .logo-icon { width: 104rpx; height: 104rpx; margin-bottom: 16rpx; }
+  .logo-icon-text { font-size: 60rpx; }
+  .form-card { padding: 28rpx 24rpx; }
+  .login-btn { margin-top: 20rpx; margin-bottom: 16rpx; }
+  .version-text { padding: 24rpx 0; }
 }
 </style>

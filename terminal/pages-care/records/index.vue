@@ -1,5 +1,5 @@
 <template>
-  <view :class="['page-container', settingsStore.pageClass()]">
+  <view :class="['page-container', 'has-bottom-tab', settingsStore.pageClass()]">
     <NavBar title="护理记录" :show-back="true" />
 
     <!-- 新增记录按钮 -->
@@ -12,6 +12,11 @@
 
     <view v-if="loading" class="loading-wrap">
       <text class="iconfont icon-loading"></text><text>加载中...</text>
+    </view>
+    <view v-else-if="error" class="empty-wrap">
+      <text class="iconfont icon-warning empty-icon text-danger"></text>
+      <text class="empty-text">{{ error }}</text>
+      <view class="retry-btn" @tap="loadData">重新加载</view>
     </view>
     <view v-else-if="records.length === 0" class="empty-wrap">
       <text class="iconfont icon-record empty-icon"></text>
@@ -26,7 +31,7 @@
           </view>
           <view class="rec-actions">
             <text class="rec-time">{{ rec.createTime }}</text>
-            <view class="delete-btn" @tap.stop="confirmDelete(rec)">
+            <view class="delete-btn" :class="{ disabled: deletingIds.includes(rec.recordId) }" @tap.stop="confirmDelete(rec)">
               <text class="iconfont icon-delete"></text>
             </view>
           </view>
@@ -60,7 +65,9 @@
         </view>
         <view class="modal-btns">
           <view class="modal-btn cancel" @tap="showAddForm = false">取消</view>
-          <view class="modal-btn confirm" @tap="submitRecord">提交</view>
+          <view class="modal-btn confirm" :class="{ disabled: submitting }" @tap="submitRecord">
+            {{ submitting ? '提交中...' : '提交' }}
+          </view>
         </view>
       </view>
     </view>
@@ -81,7 +88,8 @@ export default {
   setup() { return { settingsStore: useSettingsStore() } },
   data() {
     return {
-      records: [], loading: false, showAddForm: false,
+      records: [], loading: false, error: '', showAddForm: false,
+      submitting: false, deletingIds: [],
       newRecord: { elderlyName: '', careItems: '', remark: '' }
     }
   },
@@ -89,12 +97,16 @@ export default {
   methods: {
     async loadData() {
       this.loading = true
+      this.error = ''
       try {
         const res = await getCareRecordList({ pageSize: 50 })
         this.records = res.rows || res.data || []
+      } catch (_) {
+        this.error = '护理记录加载失败，请检查网络后重试'
       } finally { this.loading = false }
     },
     async submitRecord() {
+      if (this.submitting) return
       if (!this.newRecord.elderlyName.trim()) {
         return uni.showToast({ title: '请填写老人姓名', icon: 'none' })
       }
@@ -102,11 +114,18 @@ export default {
         ...this.newRecord,
         careItems: this.newRecord.careItems.split(/[,，、]/).map(s => s.trim()).filter(Boolean)
       }
-      await addCareRecord(data).catch(() => {})
-      uni.showToast({ title: '记录已提交', icon: 'success' })
-      this.showAddForm = false
-      this.newRecord = { elderlyName: '', careItems: '', remark: '' }
-      this.loadData()
+      this.submitting = true
+      try {
+        await addCareRecord(data)
+        uni.showToast({ title: '记录已提交', icon: 'success' })
+        this.showAddForm = false
+        this.newRecord = { elderlyName: '', careItems: '', remark: '' }
+        await this.loadData()
+      } catch (_) {
+        return
+      } finally {
+        this.submitting = false
+      }
     },
 
     confirmDelete(rec) {
@@ -115,9 +134,17 @@ export default {
         content: `确认删除 ${rec.elderlyName} 的这条护理记录？`,
         success: async ({ confirm }) => {
           if (!confirm) return
-          await deleteCareRecord(rec.recordId).catch(() => {})
-          this.records = this.records.filter(r => r.recordId !== rec.recordId)
-          uni.showToast({ title: '已删除', icon: 'success' })
+          if (this.deletingIds.includes(rec.recordId)) return
+          this.deletingIds.push(rec.recordId)
+          try {
+            await deleteCareRecord(rec.recordId)
+            this.records = this.records.filter(r => r.recordId !== rec.recordId)
+            uni.showToast({ title: '已删除', icon: 'success' })
+          } catch (_) {
+            return
+          } finally {
+            this.deletingIds = this.deletingIds.filter(id => id !== rec.recordId)
+          }
         }
       })
     }
@@ -142,6 +169,12 @@ export default {
   .iconfont, .empty-icon { font-size: 80rpx; }
   .empty-text { font-size: var(--font-sm, 24rpx); }
 }
+.retry-btn {
+  min-height: 44px; padding: 0 32rpx; border-radius: 8rpx;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--primary-color); font-size: var(--font-sm, 24rpx);
+}
+.disabled { opacity: 0.55; pointer-events: none; }
 
 .card { background: var(--bg-card); border-radius: 16rpx; box-shadow: var(--shadow); margin: 0 24rpx 20rpx; padding: 24rpx; }
 
@@ -168,13 +201,21 @@ export default {
   .rec-actions { display: flex; align-items: center; gap: 12rpx; }
   .rec-time { font-size: var(--font-xs, 20rpx); color: var(--text-secondary); }
   .delete-btn {
-    width: 48rpx; height: 48rpx; border-radius: 50%;
+    width: 44px; height: 44px; border-radius: 50%;
     background: #fef0f0; display: flex; align-items: center; justify-content: center;
     .iconfont { font-size: 26rpx; color: #f56c6c; }
   }
 }
+.modal-mask {
+  position: fixed; inset: 0; z-index: 2000;
+  display: flex; align-items: flex-end;
+  padding-top: calc(24rpx + env(safe-area-inset-top));
+  background: rgba(0, 0, 0, 0.45);
+}
 .modal-card {
-  width: 100%; background: var(--bg-card); border-radius: 32rpx 32rpx 0 0;
+  box-sizing: border-box; width: 100%; max-height: calc(100vh - 24rpx - env(safe-area-inset-top));
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: var(--bg-card); border-radius: 32rpx 32rpx 0 0;
   padding: 40rpx 32rpx; padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
 }
 .modal-title {

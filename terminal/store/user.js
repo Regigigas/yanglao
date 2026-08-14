@@ -21,7 +21,17 @@ export const useUserStore = defineStore('user', () => {
     if (!accessToken) throw new Error('登录失败，未获取到 token')
     token.value = accessToken
     uni.setStorageSync('yl_token', accessToken)
-    await fetchUserInfo()
+    try {
+      await fetchUserInfo()
+    } catch (error) {
+      token.value = ''
+      userInfo.value = null
+      roles.value = []
+      perms.value = []
+      uni.removeStorageSync('yl_token')
+      uni.removeStorageSync('yl_user')
+      throw error
+    }
     return res
   }
 

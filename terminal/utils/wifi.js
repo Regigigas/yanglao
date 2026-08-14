@@ -36,13 +36,25 @@ export function getConnectedWifi() {
 /** 扫描周边 WiFi 列表 */
 export function scanWifiList() {
   return new Promise((resolve, reject) => {
-    uni.onGetWifiList((res) => {
-      resolve(res.wifiList || [])
-    })
+    let settled = false
+    const cleanup = () => {
+      clearTimeout(timer)
+      if (typeof uni.offGetWifiList === 'function') uni.offGetWifiList(onWifiList)
+    }
+    const finish = (callback, value) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      callback(value)
+    }
+    const onWifiList = (res) => finish(resolve, res.wifiList || [])
+    const timer = setTimeout(() => finish(reject, new Error('WiFi 扫描超时，请重试')), 10000)
+
+    uni.onGetWifiList(onWifiList)
 
     uni.getWifiList({
       success() {},
-      fail: err => reject(new Error(err.errMsg || '扫描 WiFi 失败'))
+      fail: err => finish(reject, new Error(err.errMsg || '扫描 WiFi 失败'))
     })
   })
 }

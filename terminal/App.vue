@@ -3,20 +3,19 @@ import { useSettingsStore } from './store/settings'
 
 export default {
   onLaunch() {
-    // 先检查 token，不依赖 Pinia，避免时序问题
-    const token = uni.getStorageSync('yl_token')
-    if (!token) {
-      // 延迟一帧，确保路由系统就绪
-      setTimeout(() => uni.reLaunch({ url: '/pages-auth/login/index' }), 0)
-      return
-    }
-    // token 存在时再初始化需要 Pinia 的 store
+    // 登录页也需要沿用已保存的主题和字体。
     try {
       const settings = useSettingsStore()
       settings.initFromStorage()
       this.applyGlobalSettings(settings)
     } catch (_) {
       // Pinia 尚未就绪（极少发生），跳过主题初始化，页面自行处理
+    }
+
+    const token = uni.getStorageSync('yl_token')
+    if (!token) {
+      // 延迟一帧，确保路由系统就绪
+      setTimeout(() => uni.reLaunch({ url: '/pages-auth/login/index' }), 0)
     }
   },
 
@@ -76,6 +75,11 @@ button {
   min-height: 100vh;
   background: var(--bg-page, #F5F7FA);
   padding-bottom: 120rpx; /* 留出底部导航栏空间 */
+}
+
+.page-container.has-bottom-tab {
+  padding-bottom: calc(128rpx + constant(safe-area-inset-bottom)) !important;
+  padding-bottom: calc(128rpx + env(safe-area-inset-bottom)) !important;
 }
 
 /* 通用卡片 */

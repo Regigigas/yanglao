@@ -1,5 +1,5 @@
 <template>
-  <view :class="['page-container', settingsStore.pageClass()]">
+  <view :class="['page-container', 'has-bottom-tab', settingsStore.pageClass()]">
     <NavBar title="系统设置" :show-back="false" />
 
     <!-- 用户信息 -->

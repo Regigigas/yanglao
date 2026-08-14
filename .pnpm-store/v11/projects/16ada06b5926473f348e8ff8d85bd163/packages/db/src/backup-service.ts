@@ -59,6 +59,7 @@ const REMOTE_SYNC_TABLES = new Set([
   'monthly_bill',
   'bill_detail',
   'payment_record',
+  'invoice',
   'meal_menu',
   'meal_record',
   'nutrition_plan',

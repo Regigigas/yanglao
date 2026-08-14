@@ -172,7 +172,7 @@ export default {
 .item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16rpx; }
 .item-idx { font-size: var(--font-sm, 24rpx); font-weight: 600; color: var(--primary-color); }
 .remove-btn {
-  width: 44rpx; height: 44rpx; border-radius: 50%; background: #fef0f0; color: #f56c6c;
+  width: 44px; height: 44px; border-radius: 50%; background: #fef0f0; color: #f56c6c;
   display: flex; align-items: center; justify-content: center;
   .iconfont { font-size: 24rpx; }
 }
@@ -181,7 +181,7 @@ export default {
   display: flex; align-items: center; margin-bottom: 12rpx;
   .item-label { min-width: 120rpx; font-size: var(--font-xs, 20rpx); color: var(--text-secondary); }
   .item-input {
-    flex: 1; height: 64rpx; background: #fff; border-radius: 8rpx;
+    flex: 1; min-height: 44px; background: #fff; border-radius: 8rpx;
     padding: 0 16rpx; font-size: var(--font-sm, 24rpx); color: var(--text-primary);
     border: 1rpx solid var(--border-color);
     &.short { flex: 0 0 120rpx; margin-left: 12rpx; }
@@ -214,5 +214,15 @@ export default {
   .form-card { max-width: 960rpx; margin-right: auto; margin-left: auto; }
   .submit-bar { justify-content: center; }
   .submit-btn { flex: 0 1 420rpx; }
+}
+
+@media screen and (max-width: 360px) {
+  .item-row {
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 8rpx;
+  }
+  .item-row .item-label { flex: 0 0 100%; }
+  .item-row .item-input.short { flex-basis: 96rpx; margin-left: 0; }
 }
 </style>

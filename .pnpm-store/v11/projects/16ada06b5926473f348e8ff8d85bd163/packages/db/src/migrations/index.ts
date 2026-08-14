@@ -1503,6 +1503,14 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  { version: 35, description: '创建发票记录表并开放发票菜单权限', up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS invoice (id TEXT PRIMARY KEY, invoice_no TEXT NOT NULL UNIQUE, bill_id TEXT NOT NULL UNIQUE, elderly_id TEXT NOT NULL, title TEXT NOT NULL, tax_no TEXT, invoice_type TEXT NOT NULL DEFAULT 'normal', amount REAL NOT NULL, invoice_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', email TEXT, operator TEXT, applicant TEXT, remark TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER); CREATE INDEX IF NOT EXISTS idx_invoice_elderly ON invoice(elderly_id); CREATE INDEX IF NOT EXISTS idx_invoice_date ON invoice(invoice_date);`)
+    const addMenu = (table: 'sys_role' | 'sys_permission_group'): void => { const rows = db.prepare(`SELECT id, menu_keys FROM ${table}`).all() as Array<{ id: string; menu_keys: string }>; const update = db.prepare(`UPDATE ${table} SET menu_keys=?, updated_at=? WHERE id=?`); for (const row of rows) { let keys: string[] = []; try { keys = JSON.parse(row.menu_keys) as string[] } catch { keys = [] } if (!keys.includes('*') && !keys.includes('invoice')) update.run(JSON.stringify([...keys, 'invoice']), Date.now(), row.id) } }; addMenu('sys_role'); addMenu('sys_permission_group')
+  } },
+  { version: 36, description: '发票增加申请人并支持待处理状态', up: (db) => {
+    const columns = db.prepare(`PRAGMA table_info(invoice)`).all() as Array<{ name: string }>;
+    if (!columns.some(column => column.name === 'applicant')) db.exec(`ALTER TABLE invoice ADD COLUMN applicant TEXT;`);
+  } },
 ];
 
 /**

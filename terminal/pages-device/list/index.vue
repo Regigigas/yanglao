@@ -14,6 +14,11 @@
     <view v-if="loading" class="loading-wrap">
       <text class="iconfont icon-loading"></text><text>加载中...</text>
     </view>
+    <view v-else-if="error" class="empty-wrap">
+      <text class="iconfont icon-warning empty-icon text-danger"></text>
+      <text class="empty-text">{{ error }}</text>
+      <view class="retry-btn" @tap="loadData">重新加载</view>
+    </view>
     <view v-else-if="devices.length === 0" class="empty-wrap">
       <text class="iconfont icon-device empty-icon"></text>
       <text class="empty-text">暂无注册设备</text>
@@ -54,11 +59,11 @@
         </view>
         <!-- 操作按钮 -->
         <view class="dev-actions">
-          <view v-if="!dev.elderlyId" class="dev-btn btn-bind" @tap="showBind(dev)">
+           <view v-if="!dev.elderlyId" class="dev-btn btn-bind" :class="{ disabled: binding }" @tap="showBind(dev)">
             <text class="iconfont icon-link"></text>
             <text>绑定老人</text>
           </view>
-          <view v-else class="dev-btn btn-unbind" @tap="confirmUnbind(dev)">
+           <view v-else class="dev-btn btn-unbind" :class="{ disabled: unbindingIds.includes(dev.id || dev.deviceId) }" @tap="confirmUnbind(dev)">
             <text class="iconfont icon-unlink"></text>
             <text>解除绑定</text>
           </view>
@@ -79,7 +84,9 @@
         </view>
         <view class="modal-btns">
           <view class="modal-btn cancel" @tap="showBindModal=false">取消</view>
-          <view class="modal-btn confirm" @tap="confirmBind">确认绑定</view>
+          <view class="modal-btn confirm" :class="{ disabled: binding }" @tap="confirmBind">
+            {{ binding ? '绑定中...' : '确认绑定' }}
+          </view>
         </view>
       </view>
     </view>
@@ -102,7 +109,7 @@ export default {
       settingsStore: useSettingsStore()
     }
   },
-  data() { return { loading: false, elderlyList: [], bindTarget: null, showBindModal: false, selectedElderlyId: '' } },
+  data() { return { loading: false, error: '', binding: false, unbindingIds: [], elderlyList: [], bindTarget: null, showBindModal: false, selectedElderlyId: '' } },
   computed: {
     devices()      { return this.deviceStore.devices },
     onlineCount()  { return this.devices.filter(d => d.status === 'online').length },
@@ -112,7 +119,9 @@ export default {
   methods: {
     async loadData() {
       this.loading = true
+      this.error = ''
       try { await this.deviceStore.fetchDevices() }
+      catch (_) { this.error = '设备列表加载失败，请检查网络后重试' }
       finally { this.loading = false }
     },
     async loadElderly() {
@@ -128,20 +137,37 @@ export default {
       this.showBindModal = true
     },
     async confirmBind() {
+      if (this.binding) return
       if (!this.selectedElderlyId) return uni.showToast({ title: '请选择老人', icon: 'none' })
-      await bindDeviceToElderly(this.bindTarget.id || this.bindTarget.deviceId, this.selectedElderlyId).catch(() => {})
-      this.showBindModal = false
-      uni.showToast({ title: '绑定成功', icon: 'success' })
-      this.loadData()
+      this.binding = true
+      try {
+        await bindDeviceToElderly(this.bindTarget.id || this.bindTarget.deviceId, this.selectedElderlyId)
+        this.showBindModal = false
+        uni.showToast({ title: '绑定成功', icon: 'success' })
+        await this.loadData()
+      } catch (_) {
+        return
+      } finally {
+        this.binding = false
+      }
     },
     confirmUnbind(dev) {
       uni.showModal({
         title: '解除绑定', content: `确认解除 ${dev.elderlyName} 与该设备的绑定？`,
         success: async ({ confirm }) => {
           if (!confirm) return
-          await unbindDevice(dev.id || dev.deviceId).catch(() => {})
-          uni.showToast({ title: '已解除绑定', icon: 'success' })
-          this.loadData()
+          const id = dev.id || dev.deviceId
+          if (this.unbindingIds.includes(id)) return
+          this.unbindingIds.push(id)
+          try {
+            await unbindDevice(id)
+            uni.showToast({ title: '已解除绑定', icon: 'success' })
+            await this.loadData()
+          } catch (_) {
+            return
+          } finally {
+            this.unbindingIds = this.unbindingIds.filter(item => item !== id)
+          }
         }
       })
     }
@@ -168,6 +194,12 @@ export default {
   .iconfont, .empty-icon { font-size: 80rpx; }
   .empty-text { font-size: var(--font-sm, 24rpx); }
 }
+.retry-btn {
+  min-height: 44px; padding: 0 32rpx; border-radius: 8rpx;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--primary-color); font-size: var(--font-sm, 24rpx);
+}
+.disabled { opacity: 0.55; pointer-events: none; }
 
 .card { background: var(--bg-card); border-radius: 16rpx; box-shadow: var(--shadow); margin: 0 24rpx 20rpx; padding: 24rpx; }
 
@@ -176,7 +208,7 @@ export default {
   border-top: 1rpx solid var(--divider-color);
 }
 .dev-btn {
-  flex: 1; height: 68rpx; border-radius: 34rpx;
+  flex: 1; min-height: 44px; border-radius: 34rpx;
   display: flex; align-items: center; justify-content: center; gap: 8rpx;
   font-size: var(--font-xs, 20rpx); font-weight: 600;
   .iconfont { font-size: 26rpx; }

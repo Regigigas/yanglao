@@ -112,7 +112,7 @@ export default {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 112rpx;
+  height: calc(112rpx + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   border-top: 1rpx solid var(--divider-color, #EBEEF5);

@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test'
 
 const viewports = [
   { name: 'desktop', width: 1280, height: 800 },
-  { name: 'mobile', width: 390, height: 844 }
+  { name: 'mobile-320', width: 320, height: 700 },
+  { name: 'mobile-375', width: 375, height: 812 },
+  { name: 'mobile-430', width: 430, height: 932 }
 ]
 
 for (const viewport of viewports) {

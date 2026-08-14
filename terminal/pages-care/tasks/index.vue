@@ -1,5 +1,5 @@
 <template>
-  <view :class="['page-container', settingsStore.pageClass()]">
+  <view :class="['page-container', 'has-bottom-tab', settingsStore.pageClass()]">
     <NavBar title="护理任务" :show-back="false" />
 
     <!-- 状态筛选 -->
@@ -32,42 +32,64 @@
     <view v-if="loading" class="loading-wrap">
       <text class="iconfont icon-loading"></text><text>加载中...</text>
     </view>
-    <view v-else-if="filteredTasks.length === 0" class="empty-wrap">
-      <text class="iconfont icon-checklist empty-icon"></text>
-      <text class="empty-text">暂无护理任务</text>
+    <view v-else-if="error && tasks.length === 0" class="empty-wrap">
+      <text class="iconfont icon-warning empty-icon text-danger"></text>
+      <text class="empty-text">{{ error }}</text>
+      <view class="retry-btn" @tap="loadData">重新加载</view>
     </view>
     <view v-else>
-      <view
-        v-for="task in filteredTasks"
-        :key="task.taskId"
-        class="card task-card"
-        @tap="viewTask(task)"
-      >
-        <view class="task-left">
-          <view class="task-status-dot" :class="getStatusClass(task.status)"></view>
-        </view>
-        <view class="task-body">
-          <view class="task-top">
-            <text class="task-name">{{ task.taskName }}</text>
-            <view class="task-tags">
-              <view v-if="task.source === 'funeral'" class="source-tag">白事联动</view>
-              <view class="task-tag" :class="getStatusClass(task.status)">{{ getStatusText(task.status) }}</view>
+      <view v-if="error" class="error-banner">
+        <text class="iconfont icon-warning"></text>
+        <text class="error-text">{{ error }}</text>
+        <view class="retry-link" @tap="loadData">重试</view>
+      </view>
+      <view v-if="filteredTasks.length === 0" class="empty-wrap">
+        <text class="iconfont icon-checklist empty-icon"></text>
+        <text class="empty-text">当前筛选下暂无护理任务</text>
+      </view>
+      <view v-else>
+        <view
+          v-for="task in filteredTasks"
+          :key="task.taskId"
+          class="card task-card"
+          @tap="viewTask(task)"
+        >
+          <view class="task-left">
+            <view class="task-status-dot" :class="getStatusClass(task.status)"></view>
+          </view>
+          <view class="task-body">
+            <view class="task-top">
+              <text class="task-name">{{ task.taskName }}</text>
+              <view class="task-tags">
+                <view v-if="task.source === 'funeral'" class="source-tag">白事联动</view>
+                <view class="task-tag" :class="getStatusClass(task.status)">{{ getStatusText(task.status) }}</view>
+              </view>
             </view>
+            <view class="task-info">
+              <text class="iconfont icon-elder"></text>
+              <text class="info-text">{{ task.elderlyName }}</text>
+              <text class="iconfont icon-time" style="margin-left:16rpx"></text>
+              <text class="info-text">{{ task.planTime }}</text>
+            </view>
+            <text class="task-desc">{{ task.remark }}</text>
           </view>
-          <view class="task-info">
-            <text class="iconfont icon-elder"></text>
-            <text class="info-text">{{ task.elderlyName }}</text>
-            <text class="iconfont icon-time" style="margin-left:16rpx"></text>
-            <text class="info-text">{{ task.planTime }}</text>
+          <!-- 执行按钮 -->
+          <view
+            v-if="task.status === 'pending' && task.source !== 'funeral'"
+            class="action-btn btn-start"
+            :class="{ disabled: isUpdating(task.taskId) }"
+            @tap.stop="startTask(task)"
+          >
+            <text>{{ isUpdating(task.taskId) ? '处理中...' : '开始' }}</text>
           </view>
-          <text class="task-desc">{{ task.remark }}</text>
-        </view>
-        <!-- 执行按钮 -->
-        <view v-if="task.status === 'pending' && task.source !== 'funeral'" class="action-btn btn-start" @tap.stop="startTask(task)">
-          <text>开始</text>
-        </view>
-        <view v-else-if="task.status === 'doing' || (task.status === 'pending' && task.source === 'funeral')" class="action-btn btn-done" @tap.stop="completeTask(task)">
-          <text>完成</text>
+          <view
+            v-else-if="task.status === 'doing' || (task.status === 'pending' && task.source === 'funeral')"
+            class="action-btn btn-done"
+            :class="{ disabled: isUpdating(task.taskId) }"
+            @tap.stop="completeTask(task)"
+          >
+            <text>{{ isUpdating(task.taskId) ? '处理中...' : '完成' }}</text>
+          </view>
         </view>
       </view>
     </view>
@@ -90,7 +112,9 @@ export default {
   data() {
     return {
       loading: false,
+      error: '',
       tasks: [],
+      updatingIds: [],
       activeFilter: 'all',
       filters: [
         { val: 'all',     label: '全部' },
@@ -112,7 +136,9 @@ export default {
   onShow()  { this.loadData() },
   methods: {
     async loadData() {
+      if (this.loading) return
       this.loading = true
+      this.error = ''
       try {
         const res = await getCareTaskList({ pageSize: 100 })
         const responseTasks = res.rows || res.data || []
@@ -120,7 +146,9 @@ export default {
         this.tasks = [...getFuneralCareTasks(), ...remoteTasks]
       } catch (_) {
         this.tasks = getFuneralCareTasks()
-        uni.showToast({ title: '护理任务加载失败，已显示本地联动事项', icon: 'none' })
+        this.error = this.tasks.length
+          ? '远端任务加载失败，以下仅显示本地联动事项'
+          : '护理任务加载失败，请检查网络后重试'
       } finally { this.loading = false }
     },
     getStatusClass(s) {
@@ -136,40 +164,60 @@ export default {
       }
       uni.navigateTo({ url: `/pages-care/records/index?taskId=${task.taskId}` })
     },
+    isUpdating(taskId) {
+      return this.updatingIds.includes(taskId)
+    },
+    setTaskUpdating(taskId, updating) {
+      if (updating) {
+        if (!this.isUpdating(taskId)) this.updatingIds.push(taskId)
+        return
+      }
+      this.updatingIds = this.updatingIds.filter(id => id !== taskId)
+    },
     async startTask(task) {
+      if (this.isUpdating(task.taskId)) return
+      this.setTaskUpdating(task.taskId, true)
       try {
         await apiStart(task.taskId)
         task.status = 'doing'
         uni.showToast({ title: '任务已开始', icon: 'success' })
       } catch (_) {
         uni.showToast({ title: '任务开始失败，请稍后重试', icon: 'none' })
+      } finally {
+        this.setTaskUpdating(task.taskId, false)
       }
     },
-    async completeTask(task) {
+    completeTask(task) {
+      if (this.isUpdating(task.taskId)) return
+      this.setTaskUpdating(task.taskId, true)
       uni.showModal({
         title: '完成任务',
         editable: true,
         placeholderText: '输入完成备注（可选）',
         success: async ({ confirm, content }) => {
-          if (!confirm) return
-          if (task.source === 'funeral') {
-            const updatedRecord = completeFuneralCareTask(task.taskId)
-            if (!updatedRecord) {
-              uni.showToast({ title: '联动事项更新失败', icon: 'none' })
-              return
-            }
-            task.status = 'done'
-            uni.showToast({ title: '联动事项已完成', icon: 'success' })
+          if (!confirm) {
+            this.setTaskUpdating(task.taskId, false)
             return
           }
           try {
+            if (task.source === 'funeral') {
+              const updatedRecord = completeFuneralCareTask(task.taskId)
+              if (!updatedRecord) throw new Error('联动事项更新失败')
+              task.status = 'done'
+              uni.showToast({ title: '联动事项已完成', icon: 'success' })
+              return
+            }
             await apiComplete(task.taskId, content || '')
             task.status = 'done'
             uni.showToast({ title: '任务已完成', icon: 'success' })
           } catch (_) {
-            uni.showToast({ title: '任务完成失败，请稍后重试', icon: 'none' })
+            const title = task.source === 'funeral' ? '联动事项更新失败' : '任务完成失败，请稍后重试'
+            uni.showToast({ title, icon: 'none' })
+          } finally {
+            this.setTaskUpdating(task.taskId, false)
           }
-        }
+        },
+        fail: () => this.setTaskUpdating(task.taskId, false)
       })
     }
   }
@@ -206,6 +254,25 @@ export default {
   .iconfont, .empty-icon { font-size: 80rpx; }
   .empty-text { font-size: var(--font-sm, 24rpx); }
 }
+.retry-btn {
+  min-height: 44px; padding: 0 32rpx; border-radius: 8rpx;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--primary-color); font-size: var(--font-sm, 24rpx);
+}
+.error-banner {
+  display: flex; align-items: center; gap: 12rpx;
+  margin: 0 24rpx 16rpx; padding: 16rpx 20rpx;
+  border: 1rpx solid #f5c2c2; border-radius: 8rpx;
+  background: #fff4f4; color: #b42318;
+  .iconfont { flex: 0 0 auto; font-size: 28rpx; }
+  .error-text { flex: 1; min-width: 0; font-size: var(--font-xs, 20rpx); overflow-wrap: anywhere; }
+  .retry-link {
+    flex: 0 0 auto; min-width: 44px; min-height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--primary-color); font-size: var(--font-sm, 24rpx); font-weight: 600;
+  }
+}
+.disabled { opacity: 0.55; pointer-events: none; }
 
 .card {
   background: var(--bg-card); border-radius: 16rpx;
@@ -245,7 +312,8 @@ export default {
 .task-desc { display: block; font-size: var(--font-xs, 20rpx); color: var(--text-secondary); line-height: 1.55; overflow-wrap: anywhere; }
 
 .action-btn {
-  padding: 12rpx 24rpx; border-radius: 24rpx; font-size: var(--font-xs, 20rpx);
+  min-height: 44px; padding: 0 24rpx; border-radius: 24rpx; font-size: var(--font-xs, 20rpx);
+  display: flex; align-items: center; justify-content: center;
   font-weight: 600; white-space: nowrap; align-self: center;
   &.btn-start { background: var(--primary-light); color: var(--primary-color); }
   &.btn-done  { background: #e8f8f0; color: #27ae60; }

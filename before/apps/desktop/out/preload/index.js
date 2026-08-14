@@ -174,6 +174,7 @@ const api = {
     },
     stats: (month) => electron.ipcRenderer.invoke("fee:stats", month)
   },
+  invoice: { list: (elderlyId) => electron.ipcRenderer.invoke("invoice:list", elderlyId), create: (data) => electron.ipcRenderer.invoke("invoice:create", data), update: (id, data) => electron.ipcRenderer.invoke("invoice:update", { id, data }), issue: (id) => electron.ipcRenderer.invoke("invoice:issue", id), void: (id, remark) => electron.ipcRenderer.invoke("invoice:void", { id, remark }) },
   // ── 餐饮管理 ─────────────────────────────────────────────────
   meal: {
     menu: {

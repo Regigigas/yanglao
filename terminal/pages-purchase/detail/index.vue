@@ -7,6 +7,12 @@
       <text>加载中...</text>
     </view>
 
+    <view v-else-if="error" class="loading-wrap error-wrap">
+      <text class="iconfont icon-warning text-danger"></text>
+      <text>{{ error }}</text>
+      <view class="retry-btn" @tap="loadData">重新加载</view>
+    </view>
+
     <view v-else-if="order">
       <!-- 基本信息卡片 -->
       <view class="card info-card">
@@ -56,7 +62,7 @@
           <text class="item-amount">¥{{ item.amount }}</text>
         </view>
         <view class="item-meta">
-          <text>{{ item.category | categoryLabel }}  ·  {{ item.specification || '—' }}</text>
+          <text>{{ categoryLabel(item.category) }}  ·  {{ item.specification || '—' }}</text>
           <text>{{ item.quantity }} {{ item.unit }} × ¥{{ item.unitPrice }}</text>
         </view>
         <view v-if="item.receivedQty > 0" class="received-row">
@@ -67,19 +73,19 @@
 
       <!-- 操作按钮区 -->
       <view class="action-bar">
-        <view v-if="order.status === 'draft'" class="action-btn submit" @tap="submitApply">
+        <view v-if="order.status === 'draft'" class="action-btn submit" :class="{ disabled: statusChanging }" @tap="submitApply">
           <text class="iconfont icon-check"></text>
           <text>提交审批</text>
         </view>
-        <view v-if="order.status === 'pending'" class="action-btn approve" @tap="approveOrder">
+        <view v-if="order.status === 'pending'" class="action-btn approve" :class="{ disabled: statusChanging }" @tap="approveOrder">
           <text class="iconfont icon-success"></text>
           <text>审批通过</text>
         </view>
-        <view v-if="order.status === 'approved'" class="action-btn receive" @tap="receiveOrder">
+        <view v-if="order.status === 'approved'" class="action-btn receive" :class="{ disabled: statusChanging }" @tap="receiveOrder">
           <text class="iconfont icon-record"></text>
           <text>确认入库</text>
         </view>
-        <view v-if="['draft','pending'].includes(order.status)" class="action-btn cancel" @tap="cancelOrder">
+        <view v-if="['draft','pending'].includes(order.status)" class="action-btn cancel" :class="{ disabled: statusChanging }" @tap="cancelOrder">
           <text class="iconfont icon-close"></text>
           <text>取消</text>
         </view>
@@ -104,13 +110,10 @@ const CATEGORY_MAP = {
 export default {
   name: 'PurchaseDetailPage',
   components: { NavBar },
-  filters: {
-    categoryLabel: (v) => CATEGORY_MAP[v] || v
-  },
   setup() { return { settingsStore: useSettingsStore() } },
 
   data() {
-    return { orderId: '', order: null, items: [], loading: false }
+    return { orderId: '', order: null, items: [], loading: false, error: '', statusChanging: false }
   },
 
   onLoad(options) {
@@ -121,6 +124,7 @@ export default {
   methods: {
     async loadData() {
       this.loading = true
+      this.error = ''
       try {
         const [orderRes, itemsRes] = await Promise.all([
           getPurchaseOrderDetail(this.orderId),
@@ -129,7 +133,7 @@ export default {
         this.order = orderRes.data || orderRes
         this.items = itemsRes.data || itemsRes || []
       } catch (_) {
-        uni.showToast({ title: '加载失败', icon: 'none' })
+        this.error = '采购单详情加载失败，请检查网络后重试'
       } finally {
         this.loading = false
       }
@@ -141,11 +145,22 @@ export default {
     getStatusText(s) {
       return { draft:'草稿', pending:'待审批', approved:'已审批', received:'已入库', cancelled:'已取消' }[s] || s
     },
+    categoryLabel(value) {
+      return CATEGORY_MAP[value] || value || '其他'
+    },
 
     async changeStatus(status, msg) {
-      await updatePurchaseStatus(this.orderId, status)
-      uni.showToast({ title: msg, icon: 'success' })
-      this.order.status = status
+      if (this.statusChanging) return
+      this.statusChanging = true
+      try {
+        await updatePurchaseStatus(this.orderId, status)
+        this.order.status = status
+        uni.showToast({ title: msg, icon: 'success' })
+      } catch (_) {
+        return
+      } finally {
+        this.statusChanging = false
+      }
     },
 
     submitApply() { this.changeStatus('pending', '已提交审批') },
@@ -175,10 +190,17 @@ export default {
 .page-container { min-height: 100vh; background: var(--bg-page); padding-bottom: 40rpx; }
 
 .loading-wrap {
+  flex-direction: column;
   display: flex; align-items: center; justify-content: center; gap: 16rpx;
   padding: 100rpx 0; color: var(--text-secondary);
   .iconfont { font-size: 40rpx; }
 }
+.retry-btn {
+  min-height: 44px; padding: 0 32rpx; border-radius: 8rpx;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--primary-color); font-size: var(--font-sm, 24rpx);
+}
+.disabled { opacity: 0.55; pointer-events: none; }
 
 .card { background: var(--bg-card); border-radius: 16rpx; box-shadow: var(--shadow); margin: 20rpx 24rpx; padding: 24rpx; }
 
@@ -211,7 +233,7 @@ export default {
 .item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8rpx; }
 .item-name   { font-size: var(--font-sm, 24rpx); font-weight: 600; color: var(--text-primary); flex: 1; }
 .item-amount { font-size: var(--font-sm, 24rpx); font-weight: 700; color: var(--primary-color); }
-.item-meta   { font-size: var(--font-xs, 20rpx); color: var(--text-secondary); display: flex; justify-content: space-between; }
+.item-meta   { font-size: var(--font-xs, 20rpx); color: var(--text-secondary); display: flex; justify-content: space-between; gap: 12rpx; flex-wrap: wrap; }
 .received-row { display: flex; gap: 12rpx; margin-top: 8rpx; font-size: var(--font-xs, 20rpx); }
 .received-label { color: var(--text-secondary); }
 .received-val   { color: #27ae60; font-weight: 600; }

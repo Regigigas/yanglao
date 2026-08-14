@@ -37,6 +37,11 @@
     <view v-if="loading" class="loading-wrap">
       <text class="iconfont icon-loading"></text><text>加载中...</text>
     </view>
+    <view v-else-if="error" class="empty-wrap">
+      <text class="iconfont icon-warning empty-icon text-danger"></text>
+      <text class="empty-text">{{ error }}</text>
+      <view class="retry-btn" @tap="loadData">重新加载</view>
+    </view>
     <view v-else-if="filteredList.length === 0" class="empty-wrap">
       <text class="iconfont icon-task empty-icon"></text>
       <text class="empty-text">暂无采购单</text>
@@ -74,8 +79,8 @@
           </view>
           <!-- 状态操作按钮 -->
           <view class="order-actions">
-            <view v-if="order.status === 'draft'" class="order-btn btn-submit" @tap.stop="submitOrder(order)">提交审批</view>
-            <view v-if="['draft','pending'].includes(order.status)" class="order-btn btn-cancel" @tap.stop="cancelOrder(order)">取消</view>
+            <view v-if="order.status === 'draft'" class="order-btn btn-submit" :class="{ disabled: isUpdating(order) }" @tap.stop="submitOrder(order)">提交审批</view>
+            <view v-if="['draft','pending'].includes(order.status)" class="order-btn btn-cancel" :class="{ disabled: isUpdating(order) }" @tap.stop="cancelOrder(order)">取消</view>
             <view class="order-btn btn-detail" @tap.stop="viewDetail(order)">查看详情</view>
           </view>
       </view>
@@ -98,6 +103,8 @@ export default {
     return {
       orders: [],
       loading: false,
+      error: '',
+      updatingIds: [],
       statusFilter: null,
       stats: { pending: 0, approved: 0, received: 0 },
       filters: [
@@ -117,12 +124,12 @@ export default {
     }
   },
 
-  onLoad() { this.loadData() },
   onShow() { this.loadData() },
 
   methods: {
     async loadData() {
       this.loading = true
+      this.error = ''
       try {
         const [ordersRes, statsRes] = await Promise.all([
           getPurchaseOrderList({ pageSize: 100 }),
@@ -130,6 +137,8 @@ export default {
         ])
         this.orders = ordersRes.rows || ordersRes.data || []
         this.stats  = statsRes.data || statsRes || { pending: 0, approved: 0, received: 0 }
+      } catch (_) {
+        this.error = '采购单加载失败，请检查网络后重试'
       } finally {
         this.loading = false
       }
@@ -154,10 +163,23 @@ export default {
       uni.navigateTo({ url: `/pages-purchase/detail/index?id=${order.id}` })
     },
 
+    isUpdating(order) {
+      return this.updatingIds.includes(order.id)
+    },
+
     async submitOrder(order) {
-      await updatePurchaseStatus(order.id, 'pending').catch(() => {})
-      order.status = 'pending'
-      uni.showToast({ title: '已提交审批', icon: 'success' })
+      if (this.isUpdating(order)) return
+      this.updatingIds.push(order.id)
+      try {
+        await updatePurchaseStatus(order.id, 'pending')
+        order.status = 'pending'
+        uni.showToast({ title: '已提交审批', icon: 'success' })
+        await this.loadData()
+      } catch (_) {
+        return
+      } finally {
+        this.updatingIds = this.updatingIds.filter(id => id !== order.id)
+      }
     },
 
     cancelOrder(order) {
@@ -165,9 +187,18 @@ export default {
         title: '取消确认', content: '确认取消该采购单？',
         success: async ({ confirm }) => {
           if (!confirm) return
-          await updatePurchaseStatus(order.id, 'cancelled').catch(() => {})
-          order.status = 'cancelled'
-          uni.showToast({ title: '已取消', icon: 'success' })
+          if (this.isUpdating(order)) return
+          this.updatingIds.push(order.id)
+          try {
+            await updatePurchaseStatus(order.id, 'cancelled')
+            order.status = 'cancelled'
+            uni.showToast({ title: '已取消', icon: 'success' })
+            await this.loadData()
+          } catch (_) {
+            return
+          } finally {
+            this.updatingIds = this.updatingIds.filter(id => id !== order.id)
+          }
         }
       })
     }
@@ -208,6 +239,12 @@ export default {
   gap: 20rpx; color: var(--text-secondary);
   .iconfont, .empty-icon { font-size: 80rpx; }
 }
+.retry-btn {
+  min-height: 44px; padding: 0 32rpx; border-radius: 8rpx;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--primary-color); font-size: var(--font-sm, 24rpx);
+}
+.disabled { opacity: 0.55; pointer-events: none; }
 
 .card {
   background: var(--bg-card); border-radius: 16rpx;
@@ -241,7 +278,8 @@ export default {
   justify-content: flex-end;
 }
 .order-btn {
-  padding: 10rpx 24rpx; border-radius: 28rpx; font-size: var(--font-xs, 20rpx); font-weight: 600;
+  min-height: 44px; padding: 0 24rpx; border-radius: 28rpx; font-size: var(--font-xs, 20rpx); font-weight: 600;
+  display: flex; align-items: center;
   &.btn-submit { background: var(--primary-light); color: var(--primary-color); }
   &.btn-cancel { background: #fef0f0; color: #f56c6c; }
   &.btn-detail { background: var(--bg-page); color: var(--text-regular); border: 1rpx solid var(--border-color); }

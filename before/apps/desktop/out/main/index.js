@@ -1517,7 +1517,29 @@ const migrations = [
         WHERE sort_order = 0 AND room_no GLOB '[0-9]*';
       `);
     }
-  }
+  },
+  { version: 35, description: "创建发票记录表并开放发票菜单权限", up: (db2) => {
+    db2.exec(`CREATE TABLE IF NOT EXISTS invoice (id TEXT PRIMARY KEY, invoice_no TEXT NOT NULL UNIQUE, bill_id TEXT NOT NULL UNIQUE, elderly_id TEXT NOT NULL, title TEXT NOT NULL, tax_no TEXT, invoice_type TEXT NOT NULL DEFAULT 'normal', amount REAL NOT NULL, invoice_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', email TEXT, operator TEXT, applicant TEXT, remark TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER); CREATE INDEX IF NOT EXISTS idx_invoice_elderly ON invoice(elderly_id); CREATE INDEX IF NOT EXISTS idx_invoice_date ON invoice(invoice_date);`);
+    const addMenu = (table) => {
+      const rows = db2.prepare(`SELECT id, menu_keys FROM ${table}`).all();
+      const update = db2.prepare(`UPDATE ${table} SET menu_keys=?, updated_at=? WHERE id=?`);
+      for (const row of rows) {
+        let keys = [];
+        try {
+          keys = JSON.parse(row.menu_keys);
+        } catch {
+          keys = [];
+        }
+        if (!keys.includes("*") && !keys.includes("invoice")) update.run(JSON.stringify([...keys, "invoice"]), Date.now(), row.id);
+      }
+    };
+    addMenu("sys_role");
+    addMenu("sys_permission_group");
+  } },
+  { version: 36, description: "发票增加申请人并支持待处理状态", up: (db2) => {
+    const columns = db2.prepare(`PRAGMA table_info(invoice)`).all();
+    if (!columns.some((column) => column.name === "applicant")) db2.exec(`ALTER TABLE invoice ADD COLUMN applicant TEXT;`);
+  } }
 ];
 function runMigrations(db2) {
   db2.exec(`
@@ -2564,6 +2586,65 @@ class FeeRepo {
         FROM monthly_bill WHERE bill_month=? AND deleted_at IS NULL`
     ).get(month);
     return row;
+  }
+  findInvoices(elderlyId) {
+    const sql = `SELECT * FROM invoice WHERE deleted_at IS NULL${elderlyId ? " AND elderly_id=?" : ""} ORDER BY invoice_date DESC, created_at DESC`;
+    return elderlyId ? this.db.prepare(sql).all(elderlyId) : this.db.prepare(sql).all();
+  }
+  insertInvoice(data) {
+    if (!data.invoice_no.trim() || !data.title.trim()) throw new Error("发票号码和抬头不能为空");
+    if (!Number.isFinite(data.amount) || data.amount <= 0) throw new Error("开票金额必须大于 0");
+    const now = Date.now();
+    const row = { ...data, status: "pending", id: nanoid$1.nanoid(), created_at: now, updated_at: now, deleted_at: null };
+    this.db.transaction(() => {
+      const bill = this.db.prepare(`SELECT * FROM monthly_bill WHERE id=? AND deleted_at IS NULL`).get(data.bill_id);
+      if (!bill || bill.elderly_id !== data.elderly_id) throw new Error("账单不存在或与老人不匹配");
+      if (bill.status !== "paid") throw new Error("账单未结清，不能开具发票");
+      if (Math.abs(data.amount - bill.paid) > 1e-6) throw new Error("开票金额必须等于账单实收金额");
+      this.db.prepare(`INSERT INTO invoice (id,invoice_no,bill_id,elderly_id,title,tax_no,invoice_type,amount,invoice_date,status,email,operator,applicant,remark,created_at,updated_at,deleted_at) VALUES (@id,@invoice_no,@bill_id,@elderly_id,@title,@tax_no,@invoice_type,@amount,@invoice_date,@status,@email,@operator,@applicant,@remark,@created_at,@updated_at,@deleted_at)`).run(row);
+      this.writeInvoiceChange("INSERT", row);
+    })();
+    return row;
+  }
+  updatePendingInvoice(id, data) {
+    const allowedKeys = /* @__PURE__ */ new Set(["title", "tax_no", "applicant", "remark"]);
+    if (Object.keys(data).some((key) => !allowedKeys.has(key))) throw new Error("待处理发票只允许修改抬头、税号、申请人和备注");
+    if (data.title !== void 0 && !data.title.trim()) throw new Error("发票抬头不能为空");
+    const now = Date.now();
+    return this.db.transaction(() => {
+      const current = this.db.prepare(`SELECT * FROM invoice WHERE id=? AND deleted_at IS NULL`).get(id);
+      if (!current) throw new Error("发票不存在或已删除");
+      if (current.status !== "pending") throw new Error("只有待处理发票可以编辑");
+      const next = { ...current, ...data, updated_at: now };
+      this.db.prepare(`UPDATE invoice SET title=@title,tax_no=@tax_no,applicant=@applicant,remark=@remark,updated_at=@updated_at WHERE id=@id`).run(next);
+      this.writeInvoiceChange("UPDATE", next);
+      return next;
+    })();
+  }
+  issueInvoice(id) {
+    const now = Date.now();
+    this.db.transaction(() => {
+      const current = this.db.prepare(`SELECT * FROM invoice WHERE id=? AND deleted_at IS NULL`).get(id);
+      if (!current) throw new Error("发票不存在或已删除");
+      if (current.status !== "pending") throw new Error("只有待处理发票可以确认开具");
+      const next = { ...current, status: "issued", updated_at: now };
+      this.db.prepare(`UPDATE invoice SET status='issued', updated_at=? WHERE id=?`).run(now, id);
+      this.writeInvoiceChange("UPDATE", next);
+    })();
+  }
+  voidInvoice(id, remark) {
+    const now = Date.now();
+    this.db.transaction(() => {
+      const current = this.db.prepare(`SELECT * FROM invoice WHERE id=? AND deleted_at IS NULL`).get(id);
+      if (!current) throw new Error("发票不存在或已删除");
+      if (current.status === "voided") return;
+      const next = { ...current, status: "voided", remark: remark || current.remark, updated_at: now };
+      this.db.prepare(`UPDATE invoice SET status='voided', remark=?, updated_at=? WHERE id=?`).run(next.remark, now, id);
+      this.writeInvoiceChange("UPDATE", next);
+    })();
+  }
+  writeInvoiceChange(operation, row) {
+    this.db.prepare(`INSERT INTO change_log (id,table_name,record_id,operation,payload,created_at,synced,synced_at) VALUES (?,?,?,?,?,?,0,NULL)`).run(nanoid$1.nanoid(), "invoice", row.id, operation, JSON.stringify(row), Date.now());
   }
 }
 class MealRepo {
@@ -4528,6 +4609,7 @@ const REMOTE_SYNC_TABLES = /* @__PURE__ */ new Set([
   "monthly_bill",
   "bill_detail",
   "payment_record",
+  "invoice",
   "meal_menu",
   "meal_record",
   "nutrition_plan",
@@ -9202,6 +9284,7 @@ const ALLOWED_TABLES$1 = /* @__PURE__ */ new Set([
   "monthly_bill",
   "bill_detail",
   "payment_record",
+  "invoice",
   "meal_menu",
   "meal_record",
   "nutrition_plan",
@@ -9494,6 +9577,17 @@ function registerFeeHandlers(ipc, repo) {
   ipc.handle("fee:bill:detail:create", (_e, data) => repo.insertBillDetail(data));
   ipc.handle("fee:payment:list", (_e, elderlyId, billId) => repo.findPayments(elderlyId, billId));
   ipc.handle("fee:payment:create", (_e, data) => repo.insertPayment(data));
+  ipc.handle("invoice:list", (_e, elderlyId) => repo.findInvoices(elderlyId));
+  ipc.handle("invoice:create", (_e, data) => repo.insertInvoice(data));
+  ipc.handle("invoice:update", (_e, { id, data }) => repo.updatePendingInvoice(id, data));
+  ipc.handle("invoice:issue", (_e, id) => {
+    repo.issueInvoice(id);
+    return { ok: true };
+  });
+  ipc.handle("invoice:void", (_e, { id, remark }) => {
+    repo.voidInvoice(id, remark);
+    return { ok: true };
+  });
   ipc.handle("fee:stats", (_e, month) => repo.getFinancialStats(month));
 }
 function registerMealHandlers(ipc, repo) {
@@ -10539,6 +10633,7 @@ const ALLOWED_TABLES = /* @__PURE__ */ new Set([
   "monthly_bill",
   "bill_detail",
   "payment_record",
+  "invoice",
   "meal_menu",
   "meal_record",
   "nutrition_plan",

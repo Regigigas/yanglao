@@ -17,6 +17,15 @@
       <text class="iconfont icon-arrow-right strip-arrow"></text>
     </view>
 
+    <view class="profit-entry" @tap="goToProfit">
+      <view class="profit-entry-icon"><text class="iconfont icon-task"></text></view>
+      <view class="storage-copy">
+        <text class="storage-label">利润计算</text>
+        <text class="storage-path">录入初始成本、补录过程成本并查看利润统计</text>
+      </view>
+      <text class="iconfont icon-arrow-right strip-arrow"></text>
+    </view>
+
     <view class="stats-row">
       <view class="stat-item">
         <text class="stat-number">{{ records.length }}</text>
@@ -68,6 +77,10 @@
           <text>房间/床位：{{ record.roomNo || '未填写' }}</text>
           <text>经办家属：{{ record.familyContact || '未填写' }}</text>
           <text>证明材料：{{ record.proofs?.length || 0 }} 份</text>
+        </view>
+        <view v-if="requiredLinkPending(record)" class="pending-hint">
+          <text class="iconfont icon-time"></text>
+          <text>还有 {{ requiredLinkPending(record) }} 项必需联动事项待处理</text>
         </view>
         <view class="progress-head">
           <text>办理进度</text>
@@ -163,7 +176,7 @@
         </scroll-view>
         <view class="modal-actions">
           <view class="modal-button secondary" @tap="showCreate = false">取消</view>
-          <view class="modal-button primary" @tap="createRecord">建立档案</view>
+          <view class="modal-button primary" :class="{ disabled: creating }" @tap="createRecord">{{ creating ? '建立中...' : '建立档案' }}</view>
         </view>
       </view>
     </view>
@@ -172,15 +185,16 @@
 
 <script>
 import { useSettingsStore } from '../../store/settings'
-import { createFuneralCase, funeralProgress, getFuneralCases, saveFuneralCase } from '../../utils/funeral'
+import { createFuneralCase, funeralProgress, getFuneralCases, missingArchiveLinkTasks, saveFuneralCase } from '../../utils/funeral'
 import { getConfiguredStoragePath, getFuneralStorageConfig } from '../../utils/funeral-storage'
 import NavBar from '../../components/NavBar.vue'
 
 function emptyForm() {
   const now = new Date()
+  const localDate = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-')
   return {
     deceasedName: '',
-    deathDate: now.toISOString().slice(0, 10),
+    deathDate: localDate,
     deathTime: '',
     roomNo: '',
     responsible: '',
@@ -205,6 +219,7 @@ export default {
       records: [],
       filter: 'all',
       showCreate: false,
+      creating: false,
       form: emptyForm(),
       storageConfig: getFuneralStorageConfig(),
       filters: [
@@ -218,7 +233,11 @@ export default {
     processingCount() { return this.records.filter((item) => item.status !== 'completed').length },
     completedCount() { return this.records.filter((item) => item.status === 'completed').length },
     filteredRecords() {
-      return this.filter === 'all' ? this.records : this.records.filter((item) => item.status === this.filter)
+      const records = this.filter === 'all' ? this.records : this.records.filter((item) => item.status === this.filter)
+      return [...records].sort((left, right) => {
+        if (left.status !== right.status) return left.status === 'completed' ? 1 : -1
+        return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))
+      })
     },
     storagePath() {
       return this.storageConfig.resolvedPath || getConfiguredStoragePath(this.storageConfig)
@@ -230,18 +249,26 @@ export default {
   },
   methods: {
     progressOf: funeralProgress,
+    requiredLinkPending(record) { return missingArchiveLinkTasks(record).length },
     goToStorage() { uni.navigateTo({ url: '/pages-funeral/storage/index' }) },
+    goToProfit() { uni.navigateTo({ url: '/pages-funeral/profit/index' }) },
     openCreate() {
       this.form = emptyForm()
       this.showCreate = true
     },
     createRecord() {
+      if (this.creating) return
       if (!this.form.deceasedName.trim()) return uni.showToast({ title: '请填写逝者姓名', icon: 'none' })
       if (!this.form.deathDate) return uni.showToast({ title: '请选择离世日期', icon: 'none' })
-      const record = saveFuneralCase(createFuneralCase(this.form))
-      this.records = getFuneralCases()
-      this.showCreate = false
-      uni.navigateTo({ url: `/pages-funeral/detail/index?id=${record.id}` })
+      this.creating = true
+      try {
+        const record = saveFuneralCase(createFuneralCase(this.form))
+        this.records = getFuneralCases()
+        this.showCreate = false
+        uni.navigateTo({ url: `/pages-funeral/detail/index?id=${record.id}` })
+      } finally {
+        this.creating = false
+      }
     },
     openDetail(record) {
       uni.navigateTo({ url: `/pages-funeral/detail/index?id=${record.id}` })
@@ -274,6 +301,9 @@ export default {
 .case-no { display: block; color: var(--text-secondary); font-size: var(--font-xs, 20rpx); margin-top: 4rpx; }
 .status-tag { padding: 7rpx 16rpx; border-radius: 6rpx; font-size: var(--font-xs, 20rpx); background: #fff5e8; color: #a9670c; &.completed { background: #e9f6ef; color: #23744f; } }
 .case-info { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx 20rpx; padding: 18rpx 0; color: var(--text-regular); font-size: var(--font-xs, 20rpx); }
+.pending-hint { display: flex; align-items: center; gap: 8rpx; margin: -4rpx 0 16rpx; padding: 12rpx 14rpx; border-radius: 6rpx; background: #fff5e8; color: #94600f; font-size: var(--font-xs, 20rpx); .iconfont { font-size: 22rpx; } }
+.profit-entry { display: flex; align-items: center; gap: 18rpx; margin: 0 24rpx 18rpx; padding: 20rpx 24rpx; border-radius: 8rpx; background: #fff; box-shadow: var(--shadow); }
+.profit-entry-icon { width: 58rpx; height: 58rpx; border-radius: 8rpx; display: flex; align-items: center; justify-content: center; background: #e9f6ef; color: #23744f; }
 .progress-head { display: flex; justify-content: space-between; color: var(--text-secondary); font-size: var(--font-xs, 20rpx); margin-bottom: 8rpx; }
 .progress-track { height: 10rpx; background: var(--divider-color); border-radius: 5rpx; overflow: hidden; }
 .progress-value { height: 100%; background: #52606d; transition: width .2s; }
@@ -299,5 +329,5 @@ export default {
 .folk-fields { margin-top: 4rpx; }
 .remark-field { margin: 0 28rpx 28rpx; }
 .modal-actions { height: 100rpx; padding: 12rpx 28rpx; display: flex; gap: 16rpx; border-top: 1rpx solid var(--divider-color); }
-.modal-button { flex: 1; display: flex; align-items: center; justify-content: center; border-radius: 8rpx; font-size: var(--font-md, 28rpx); font-weight: 600; &.secondary { color: var(--text-regular); background: var(--bg-page); border: 1rpx solid var(--border-color); } &.primary { color: #fff; background: #52606d; } }
+.modal-button { flex: 1; display: flex; align-items: center; justify-content: center; border-radius: 8rpx; font-size: var(--font-md, 28rpx); font-weight: 600; &.secondary { color: var(--text-regular); background: var(--bg-page); border: 1rpx solid var(--border-color); } &.primary { color: #fff; background: #52606d; } &.disabled { opacity: .55; } }
 </style>

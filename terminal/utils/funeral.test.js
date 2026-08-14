@@ -1,15 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   completeFuneralCareTask,
+  calculateFuneralProfit,
+  centToChineseUppercase,
+  centToYuan,
+  convertFuneralFinanceYuanToCent,
   createFuneralCase,
   funeralProgress,
   getFuneralCareTasks,
   getFuneralCase,
   getFuneralPurchaseItems,
   missingArchiveLinkTasks,
+  missingPreviousFuneralSteps,
   saveFuneralCase,
   setFuneralLinkTask,
-  setFuneralStep
+  setFuneralStep,
+  yuanToCent
 } from './funeral'
 import { getConfiguredStoragePath, normalizeFuneralStorageConfig, sanitizeFileSegment } from './funeral-storage'
 
@@ -24,6 +30,25 @@ beforeEach(() => {
 })
 
 describe('funeral model', () => {
+  it('计算初始成本、补录成本、预估利润和真实利润', () => {
+    expect(calculateFuneralProfit({ amountUnit: 'cent', estimatedRevenue: 100000, actualRevenue: 90000, initialCost: 30000, intermediateCosts: [{ name: '运输', amount: 12000 }] })).toMatchObject({ totalCost: '42000', estimatedProfit: '58000', actualProfit: '48000' })
+  })
+  it('收入未录入时不应误算为亏损，并保留明确录入的零收入', () => {
+    expect(calculateFuneralProfit({ amountUnit: 'cent', initialCost: 30000 })).toMatchObject({ estimatedProfit: null, actualProfit: null })
+    expect(calculateFuneralProfit({ amountUnit: 'cent', actualRevenue: 0, initialCost: 30000 })).toMatchObject({ hasActualRevenue: true, actualProfit: '-30000' })
+  })
+  it('界面元与存储分之间准确转换，并兼容旧的元数据', () => {
+    expect(yuanToCent('12.34')).toBe('1234')
+    expect(centToYuan(1234)).toBe('12.34')
+    expect(convertFuneralFinanceYuanToCent({ estimatedRevenue: '99.99', initialCost: '12.34', intermediateCosts: [{ amount: '0.10' }] })).toMatchObject({ amountUnit: 'cent', estimatedRevenue: '9999', initialCost: '1234', intermediateCosts: [{ amount: '10' }] })
+    expect(calculateFuneralProfit({ estimatedRevenue: 100, initialCost: 20 })).toMatchObject({ amountUnit: 'cent', estimatedRevenue: '10000', totalCost: '2000', estimatedProfit: '8000' })
+  })
+  it('支持超过安全整数的金额计算和人民币大写转换', () => {
+    const result = calculateFuneralProfit({ amountUnit: 'cent', estimatedRevenue: '900719925474099312345', initialCost: '12345', intermediateCosts: [{ amount: '55' }] })
+    expect(result.estimatedProfit).toBe('900719925474099299945')
+    expect(centToChineseUppercase('123456789')).toBe('人民币壹佰贰拾叁万肆仟伍佰陆拾柒元捌角玖分')
+    expect(centToChineseUppercase('-100005')).toBe('人民币负壹仟元零伍分')
+  })
   it('创建包含标准流程和可选民俗信息的档案', () => {
     const record = createFuneralCase({
       deceasedName: '张三',
@@ -47,6 +72,22 @@ describe('funeral model', () => {
     })
     expect(record.status).toBe('completed')
     expect(funeralProgress(record)).toBe(100)
+  })
+
+  it('流程必须按顺序完成，撤销前序步骤时同步撤销后续步骤', () => {
+    let record = createFuneralCase({ deceasedName: '顺序测试' }, 1)
+    expect(missingPreviousFuneralSteps(record, 'transfer').map((step) => step.id)).toEqual(['register', 'family'])
+
+    record = setFuneralStep(record, 'register', true, 2)
+    record = setFuneralStep(record, 'family', true, 3)
+    record = setFuneralStep(record, 'transfer', true, 4)
+    expect(missingPreviousFuneralSteps(record, 'transfer')).toEqual([])
+
+    record = setFuneralStep(record, 'family', false, 5)
+    expect(record.steps.find((step) => step.id === 'register').completed).toBe(true)
+    expect(record.steps.find((step) => step.id === 'family').completed).toBe(false)
+    expect(record.steps.find((step) => step.id === 'transfer').completed).toBe(false)
+    expect(record.status).toBe('processing')
   })
 
   it('归档前要求必需联动事项完成', () => {

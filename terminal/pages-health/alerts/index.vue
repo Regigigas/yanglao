@@ -1,5 +1,5 @@
 <template>
-  <view :class="['page-container', settingsStore.pageClass()]">
+  <view :class="['page-container', 'has-bottom-tab', settingsStore.pageClass()]">
     <NavBar title="健康告警" :show-back="true" />
 
     <!-- 筛选栏 -->
@@ -13,14 +13,20 @@
       >
         <text>{{ f.label }}</text>
       </view>
-      <view class="read-all-btn" @tap="readAll">
+      <view class="read-all-btn" :class="{ disabled: markingAll }" @tap="readAll">
         <text class="iconfont icon-check"></text>
-        <text>全部已读</text>
+        <text>{{ markingAll ? '处理中' : '全部已读' }}</text>
       </view>
     </view>
 
     <view v-if="loading" class="loading-wrap">
       <text class="iconfont icon-loading"></text><text>加载中...</text>
+    </view>
+
+    <view v-else-if="error" class="empty-wrap error-wrap">
+      <text class="iconfont icon-warning empty-icon text-danger"></text>
+      <text class="empty-text">{{ error }}</text>
+      <view class="retry-btn" @tap="loadData">重新加载</view>
     </view>
 
     <view v-else-if="filteredAlerts.length === 0" class="empty-wrap">
@@ -47,8 +53,8 @@
           <text class="alert-msg">{{ alert.message }}</text>
           <view class="alert-footer">
             <text class="alert-time">{{ alert.createTime }}</text>
-            <view v-if="!alert.isRead" class="read-btn" @tap.stop="readAlert(alert)">
-              <text>标为已读</text>
+            <view v-if="!alert.isRead" class="read-btn" :class="{ disabled: isReading(alert) }" @tap.stop="readAlert(alert)">
+              <text>{{ isReading(alert) ? '处理中' : '标为已读' }}</text>
             </view>
           </view>
         </view>
@@ -78,6 +84,9 @@ export default {
   data() {
     return {
       loading:      false,
+      error:        '',
+      markingAll:   false,
+      readingIds:   [],
       activeFilter: 'all',
       elderlyId:    '',   // 若从监测页传入则只展示该老人的告警
       filters: [
@@ -106,7 +115,9 @@ export default {
   methods: {
     async loadData() {
       this.loading = true
+      this.error = ''
       try { await this.healthStore.fetchAlerts() }
+      catch (_) { this.error = '健康告警加载失败，请检查网络后重试' }
       finally { this.loading = false }
     },
     getLevelClass(lv) {
@@ -117,14 +128,33 @@ export default {
     getLevelText(lv) {
       return { critical: '危急', warning: '警告', info: '提示' }[lv] || '告警'
     },
+    isReading(alert) {
+      return this.readingIds.includes(alert.alertId)
+    },
     async readAlert(alert) {
-      await apiRead(alert.alertId).catch(() => {})
-      alert.isRead = true
+      if (this.isReading(alert)) return
+      this.readingIds.push(alert.alertId)
+      try {
+        await apiRead(alert.alertId)
+        alert.isRead = true
+      } catch (_) {
+        return
+      } finally {
+        this.readingIds = this.readingIds.filter(id => id !== alert.alertId)
+      }
     },
     async readAll() {
-      await readAllAlerts().catch(() => {})
-      this.healthStore.healthAlerts.forEach(a => { a.isRead = true })
-      uni.showToast({ title: '已全部标记已读', icon: 'success' })
+      if (this.markingAll) return
+      this.markingAll = true
+      try {
+        await readAllAlerts()
+        this.healthStore.healthAlerts.forEach(a => { a.isRead = true })
+        uni.showToast({ title: '已全部标记已读', icon: 'success' })
+      } catch (_) {
+        return
+      } finally {
+        this.markingAll = false
+      }
     }
   }
 }
@@ -156,13 +186,23 @@ export default {
   gap: 6rpx;
   color: var(--primary-color);
   font-size: var(--font-xs, 20rpx);
+  min-height: 44px;
+  padding: 0 8rpx;
 }
+
+.disabled { opacity: 0.55; pointer-events: none; }
 
 .loading-wrap, .empty-wrap {
   display: flex; flex-direction: column; align-items: center; padding: 100rpx 0;
   gap: 20rpx; color: var(--text-secondary);
   .iconfont { font-size: 80rpx; }
   .empty-text { font-size: var(--font-sm, 24rpx); }
+}
+
+.retry-btn {
+  min-height: 44px; padding: 0 32rpx; border-radius: 8rpx;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--primary-color); font-size: var(--font-sm, 24rpx);
 }
 
 .card {
@@ -193,7 +233,8 @@ export default {
   display: flex; justify-content: space-between; align-items: center;
   .alert-time { font-size: var(--font-xs, 20rpx); color: var(--text-secondary); }
   .read-btn {
-    padding: 6rpx 20rpx; background: var(--primary-light);
+    min-height: 44px; padding: 0 20rpx; background: var(--primary-light);
+    display: flex; align-items: center;
     color: var(--primary-color); border-radius: 24rpx; font-size: var(--font-xs, 20rpx);
   }
 }

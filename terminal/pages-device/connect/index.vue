@@ -1,5 +1,5 @@
 <template>
-  <view :class="['page-container', settingsStore.pageClass()]">
+  <view :class="['page-container', 'has-bottom-tab', settingsStore.pageClass()]">
     <NavBar title="设备连接" :show-back="false" />
 
     <!-- 连接方式 Tab -->
@@ -14,6 +14,11 @@
       </view>
     </view>
 
+    <view v-if="!deviceConnectivitySupported" class="capability-banner">
+      <text class="iconfont icon-warning"></text>
+      <text>蓝牙和 WiFi 扫描仅支持移动端 App，请在手机 App 中操作</text>
+    </view>
+
     <!-- ===== 蓝牙面板 ===== -->
     <view v-if="tab === 'bt'">
       <!-- 当前连接状态 -->
@@ -23,25 +28,38 @@
             :class="deviceStore.btConnectedDevice ? 'text-success' : 'text-info'"></text>
           <view>
             <text class="status-title">{{ deviceStore.btConnectedDevice ? '蓝牙已连接' : '蓝牙未连接' }}</text>
-            <text class="status-sub">{{ deviceStore.btConnectedDevice ? deviceStore.btConnectedDevice.name : '点击下方扫描设备' }}</text>
+            <text class="status-sub">{{ bluetoothStatusText }}</text>
           </view>
         </view>
-        <view v-if="deviceStore.btConnectedDevice" class="disconnect-btn" @tap="handleDisconnect">
+        <view
+          v-if="deviceStore.btConnectedDevice"
+          class="disconnect-btn"
+          :class="{ disabled: btDisconnecting || Boolean(btConnectingId) }"
+          @tap="handleDisconnect"
+        >
           <text class="iconfont icon-unlink"></text>
-          <text>断开连接</text>
+          <text>{{ btDisconnecting ? '断开中...' : '断开连接' }}</text>
         </view>
       </view>
 
       <!-- 扫描控制 -->
       <view class="action-card">
         <view class="scan-btn"
-          :class="deviceStore.btScanning ? 'btn-stop' : 'btn-scan'"
+          :class="[
+            deviceStore.btScanning ? 'btn-stop' : 'btn-scan',
+            { disabled: !deviceConnectivitySupported || btInitializing || Boolean(btConnectingId) || btDisconnecting }
+          ]"
           @tap="toggleScan"
         >
           <text class="iconfont" :class="deviceStore.btScanning ? 'icon-close' : 'icon-scan'"></text>
-          <text>{{ deviceStore.btScanning ? '停止扫描' : '扫描设备' }}</text>
+          <text>{{ btInitializing ? '准备中...' : (deviceStore.btScanning ? '停止扫描' : '扫描设备') }}</text>
         </view>
         <text v-if="deviceStore.btScanning" class="scanning-hint">正在扫描周边蓝牙设备...</text>
+      </view>
+      <view v-if="btError" class="error-banner">
+        <text class="iconfont icon-warning"></text>
+        <text class="error-text">{{ btError }}</text>
+        <view class="retry-link" @tap="toggleScan">重试</view>
       </view>
 
       <!-- 发现的设备列表 -->
@@ -52,10 +70,11 @@
         v-for="dev in deviceStore.btFoundDevices"
         :key="dev.deviceId"
         class="card device-item"
+        :class="{ disabled: Boolean(btConnectingId) || btDisconnecting }"
         @tap="connectBluetooth(dev)"
       >
         <text class="iconfont icon-bluetooth device-icon"
-          :class="dev.connected ? 'text-success' : 'text-info'"></text>
+          :class="isBluetoothConnected(dev) ? 'text-success' : 'text-info'"></text>
         <view class="device-info">
           <text class="device-name">{{ dev.name }}</text>
           <text class="device-id">{{ dev.deviceId }}</text>
@@ -64,8 +83,10 @@
           <text class="iconfont icon-signal rssi-icon"></text>
           <text class="rssi-val">{{ dev.RSSI }} dBm</text>
         </view>
-        <view v-if="dev.connected" class="connected-tag">已连接</view>
-        <view v-else class="connect-tag" @tap.stop="connectBluetooth(dev)">连接</view>
+        <view v-if="isBluetoothConnected(dev)" class="connected-tag">已连接</view>
+        <view v-else class="connect-tag" @tap.stop="connectBluetooth(dev)">
+          {{ btConnectingId === dev.deviceId ? '连接中...' : '连接' }}
+        </view>
       </view>
     </view>
 
@@ -78,17 +99,26 @@
             :class="deviceStore.wifiConnected ? 'text-success' : 'text-info'"></text>
           <view>
             <text class="status-title">{{ deviceStore.wifiConnected ? '已连接 WiFi' : '未连接 WiFi' }}</text>
-            <text class="status-sub">{{ deviceStore.wifiInfo?.SSID || '点击下方扫描 WiFi' }}</text>
+            <text class="status-sub">{{ wifiStatusText }}</text>
           </view>
         </view>
       </view>
 
       <!-- WiFi 扫描 -->
       <view class="action-card">
-        <view class="scan-btn btn-scan" @tap="scanWifi">
+        <view
+          class="scan-btn btn-scan"
+          :class="{ disabled: !deviceConnectivitySupported || wifiScanning || wifiConnecting }"
+          @tap="scanWifi"
+        >
           <text class="iconfont icon-search"></text>
           <text>{{ wifiScanning ? '扫描中...' : '扫描 WiFi' }}</text>
         </view>
+      </view>
+      <view v-if="wifiError" class="error-banner">
+        <text class="iconfont icon-warning"></text>
+        <text class="error-text">{{ wifiError }}</text>
+        <view class="retry-link" @tap="scanWifi">重试</view>
       </view>
 
       <!-- WiFi 列表 -->
@@ -99,6 +129,7 @@
         v-for="wifi in wifiList"
         :key="wifi.BSSID"
         class="card device-item"
+        :class="{ disabled: wifiScanning || wifiConnecting }"
         @tap="showWifiPwd(wifi)"
       >
         <text class="iconfont icon-wifi device-icon text-info"></text>
@@ -112,7 +143,7 @@
       </view>
 
       <!-- WiFi 密码输入 -->
-      <view v-if="wifiTarget" class="modal-mask" @tap.self="wifiTarget = null">
+      <view v-if="wifiTarget" class="modal-mask" @tap.self="closeWifiModal">
         <view class="modal-card">
           <text class="modal-title-text">连接 {{ wifiTarget.SSID }}</text>
           <view class="form-item">
@@ -120,8 +151,10 @@
             <input v-model="wifiPassword" :password="true" placeholder="请输入 WiFi 密码" class="form-input" />
           </view>
           <view class="modal-btns">
-            <view class="modal-btn cancel" @tap="wifiTarget = null">取消</view>
-            <view class="modal-btn confirm" @tap="connectWifi">连接</view>
+            <view class="modal-btn cancel" :class="{ disabled: wifiConnecting }" @tap="closeWifiModal">取消</view>
+            <view class="modal-btn confirm" :class="{ disabled: wifiConnecting }" @tap="connectWifi">
+              {{ wifiConnecting ? '连接中...' : '连接' }}
+            </view>
           </view>
         </view>
       </view>
@@ -144,6 +177,12 @@ import {
 import NavBar       from '../../components/NavBar.vue'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 
+function supportsDeviceConnectivity() {
+  const platform = uni.getSystemInfoSync().uniPlatform
+  if (platform === 'web') return false
+  return typeof uni.openBluetoothAdapter === 'function' && typeof uni.startWifi === 'function'
+}
+
 export default {
   name: 'DeviceConnectPage',
   components: { NavBar, BottomTabBar },
@@ -156,58 +195,93 @@ export default {
   data() {
     return {
       tab:          'bt',
+      deviceConnectivitySupported: supportsDeviceConnectivity(),
+      btInitializing: false,
+      btConnectingId: '',
+      btDisconnecting: false,
+      btError: '',
       wifiList:     [],
       wifiScanning: false,
+      wifiConnecting: false,
+      wifiError: '',
       wifiTarget:   null,
       wifiPassword: ''
     }
   },
+  computed: {
+    bluetoothStatusText() {
+      if (!this.deviceConnectivitySupported) return '请使用移动端 App 连接设备'
+      return this.deviceStore.btConnectedDevice?.name || '点击下方扫描设备'
+    },
+    wifiStatusText() {
+      if (!this.deviceConnectivitySupported) return '请使用移动端 App 扫描 WiFi'
+      return this.deviceStore.wifiInfo?.SSID || '点击下方扫描 WiFi'
+    }
+  },
   onLoad() {
+    if (!this.deviceConnectivitySupported) return
     this.initBt()
     getConnectedWifi().catch(() => {})
   },
   onUnload() {
-    if (this.deviceStore.btScanning) stopScan()
+    if (this.deviceConnectivitySupported && this.deviceStore.btScanning) stopScan()
   },
   methods: {
     async initBt() {
+      if (!this.deviceConnectivitySupported || this.btInitializing) return false
+      this.btInitializing = true
+      this.btError = ''
       try {
         await initBluetooth()
+        return true
       } catch (e) {
-        uni.showToast({ title: e.message, icon: 'none' })
+        this.btError = e.message || '蓝牙初始化失败'
+        return false
+      } finally {
+        this.btInitializing = false
       }
     },
 
     async toggleScan() {
+      if (!this.deviceConnectivitySupported || this.btInitializing || this.btConnectingId || this.btDisconnecting) return
       if (this.deviceStore.btScanning) {
         stopScan()
       } else {
+        this.btError = ''
         try {
-          await initBluetooth()
+          if (!await this.initBt()) return
           await startScan()
         } catch (e) {
-          uni.showToast({ title: e.message, icon: 'none' })
+          this.btError = e.message || '蓝牙扫描失败'
         }
       }
     },
 
+    isBluetoothConnected(dev) {
+      return this.deviceStore.btConnectedDevice?.deviceId === dev.deviceId
+    },
+
     async connectBluetooth(dev) {
-      if (dev.connected) return
+      if (!this.deviceConnectivitySupported || this.isBluetoothConnected(dev) || this.btConnectingId || this.btDisconnecting) return
+      this.btConnectingId = dev.deviceId
+      if (this.deviceStore.btScanning) stopScan()
       uni.showLoading({ title: '连接中...' })
       try {
         await connectDevice(dev.deviceId)
-        dev.connected = true
         uni.showToast({ title: '连接成功', icon: 'success' })
-        stopScan()
       } catch (e) {
         uni.showToast({ title: e.message, icon: 'none' })
       } finally {
+        this.btConnectingId = ''
         uni.hideLoading()
       }
     },
 
     async handleDisconnect() {
+      if (!this.deviceConnectivitySupported || this.btDisconnecting || this.btConnectingId) return
+      if (!this.deviceStore.btConnectedDevice) return
       const { deviceId } = this.deviceStore.btConnectedDevice
+      this.btDisconnecting = true
       uni.showLoading({ title: '断开中...' })
       try {
         await disconnectDevice(deviceId)
@@ -215,40 +289,56 @@ export default {
       } catch (e) {
         uni.showToast({ title: e.message, icon: 'none' })
       } finally {
+        this.btDisconnecting = false
         uni.hideLoading()
       }
     },
 
     async scanWifi() {
+      if (!this.deviceConnectivitySupported || this.wifiScanning || this.wifiConnecting) return
       this.wifiScanning = true
+      this.wifiError = ''
       try {
         await initWifi()
         const list = await scanWifiList()
         this.wifiList = list
       } catch (e) {
-        uni.showToast({ title: e.message, icon: 'none' })
+        this.wifiError = e.message || 'WiFi 扫描失败'
       } finally {
         this.wifiScanning = false
       }
     },
 
     showWifiPwd(wifi) {
+      if (!this.deviceConnectivitySupported || this.wifiScanning || this.wifiConnecting) return
       this.wifiTarget = wifi
       this.wifiPassword = ''
     },
 
+    closeWifiModal() {
+      if (this.wifiConnecting) return
+      this.wifiTarget = null
+      this.wifiPassword = ''
+    },
+
     async connectWifi() {
+      if (!this.deviceConnectivitySupported || this.wifiConnecting || !this.wifiTarget) return
       if (!this.wifiPassword && this.wifiTarget?.secure) {
         return uni.showToast({ title: '请输入 WiFi 密码', icon: 'none' })
       }
+      const target = this.wifiTarget
+      this.wifiConnecting = true
       uni.showLoading({ title: '连接中...' })
       try {
-        await utilConnectWifi(this.wifiTarget.SSID, this.wifiPassword, this.wifiTarget.BSSID)
+        await utilConnectWifi(target.SSID, this.wifiPassword, target.BSSID)
+        this.deviceStore.setWifiInfo(target)
         this.wifiTarget = null
+        this.wifiPassword = ''
         getConnectedWifi().catch(() => {})
       } catch (e) {
         uni.showToast({ title: e.message, icon: 'none' })
       } finally {
+        this.wifiConnecting = false
         uni.hideLoading()
       }
     }
@@ -271,6 +361,24 @@ export default {
     }
   }
 }
+.capability-banner, .error-banner {
+  display: flex; align-items: center; gap: 12rpx;
+  margin: 0 24rpx 20rpx; padding: 18rpx 20rpx;
+  border: 1rpx solid #f0c36d; border-radius: 8rpx;
+  background: #fff8e8; color: #8a5a00;
+  font-size: var(--font-sm, 24rpx); line-height: 1.5;
+  .iconfont { flex: 0 0 auto; font-size: 30rpx; }
+}
+.error-banner {
+  border-color: #f5c2c2; background: #fff4f4; color: #b42318;
+  .error-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .retry-link {
+    flex: 0 0 auto; min-width: 44px; min-height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--primary-color); font-weight: 600;
+  }
+}
+.disabled { opacity: 0.55; pointer-events: none; }
 
 .card {
   background: var(--bg-card); border-radius: 16rpx;
@@ -324,7 +432,8 @@ export default {
     padding: 6rpx 20rpx; background: #e8f8f0; color: #27ae60; border-radius: 20rpx; font-size: var(--font-xs, 20rpx);
   }
   .connect-tag {
-    padding: 6rpx 20rpx; background: var(--primary-light); color: var(--primary-color); border-radius: 20rpx; font-size: var(--font-xs, 20rpx);
+    min-height: 44px; padding: 0 20rpx; display: flex; align-items: center;
+    background: var(--primary-light); color: var(--primary-color); border-radius: 20rpx; font-size: var(--font-xs, 20rpx);
   }
 }
 
@@ -334,7 +443,8 @@ export default {
   display: flex; align-items: flex-end;
 }
 .modal-card {
-  width: 100%; background: var(--bg-card); border-radius: 32rpx 32rpx 0 0;
+  box-sizing: border-box; width: 100%; max-height: calc(100vh - env(safe-area-inset-top)); overflow-y: auto;
+  background: var(--bg-card); border-radius: 32rpx 32rpx 0 0;
   padding: 40rpx 32rpx; padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
 }
 .modal-title-text {

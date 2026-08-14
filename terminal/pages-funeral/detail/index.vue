@@ -187,6 +187,7 @@ import {
   funeralProgress,
   getFuneralCase,
   missingArchiveLinkTasks,
+  missingPreviousFuneralSteps,
   saveFuneralCase,
   setFuneralLinkTask,
   setFuneralStep
@@ -249,6 +250,14 @@ export default {
     },
     toggleStep(step) {
       if (!step.completed) {
+        const previousSteps = missingPreviousFuneralSteps(this.record, step.id)
+        if (previousSteps.length) {
+          return uni.showModal({
+            title: '请按流程办理',
+            content: `请先完成：${previousSteps.map((item) => item.title).join('、')}`,
+            showCancel: false
+          })
+        }
         const missing = FUNERAL_PROOF_TYPES.filter((type) => type.stepId === step.id && type.required)
           .filter((type) => !(this.record.proofs || []).some((file) => file.typeId === type.id))
         if (missing.length) {
@@ -271,7 +280,9 @@ export default {
       }
       uni.showModal({
         title: step.completed ? '撤销完成状态' : '确认步骤完成',
-        content: step.completed ? `确认将“${step.title}”恢复为待办理？` : `确认“${step.title}”已完成？`,
+        content: step.completed
+          ? `确认将“${step.title}”恢复为待办理？其后的已完成步骤也会同步撤销。`
+          : `确认“${step.title}”已完成？`,
         success: ({ confirm }) => {
           if (!confirm) return
           this.record = setFuneralStep(this.record, step.id, !step.completed)

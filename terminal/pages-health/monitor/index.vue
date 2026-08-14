@@ -1,5 +1,5 @@
 <template>
-  <view :class="['page-container', settingsStore.pageClass()]">
+  <view :class="['page-container', 'has-bottom-tab', settingsStore.pageClass()]">
     <NavBar title="健康监测" :show-back="false" />
 
     <!-- 搜索栏 -->
@@ -27,6 +27,12 @@
     <view v-if="loading" class="loading-wrap">
       <text class="iconfont icon-loading loading-icon"></text>
       <text class="loading-text">加载中...</text>
+    </view>
+
+    <view v-else-if="error" class="empty-wrap">
+      <text class="iconfont icon-warning empty-icon text-danger"></text>
+      <text class="empty-text">{{ error }}</text>
+      <view class="retry-btn" @tap="loadData">重新加载</view>
     </view>
 
     <view v-else-if="filteredList.length === 0" class="empty-wrap">
@@ -116,6 +122,7 @@ export default {
     return {
       keyword:    '',
       loading:    false,
+      error:      '',
       lastUpdate: '—'
     }
   },
@@ -129,16 +136,18 @@ export default {
     }
   },
 
-  onLoad() { this.loadData() },
   onShow()  { this.loadData() },
 
   methods: {
     async loadData() {
       this.loading = true
+      this.error = ''
       try {
         await this.healthStore.fetchHealthList({ pageSize: 100 })
         const now = new Date()
         this.lastUpdate = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`
+      } catch (_) {
+        this.error = '健康监测加载失败，请检查网络后重试'
       } finally {
         this.loading = false
       }
@@ -273,6 +282,29 @@ export default {
   .metric-val  { font-size: var(--font-sm, 24rpx); font-weight: 700; color: var(--text-primary); }
   .metric-unit { font-size: 18rpx; color: var(--text-secondary); }
   .metric-name { font-size: var(--font-xs, 20rpx); color: var(--text-secondary); }
+}
+
+.retry-btn {
+  min-height: 44px; padding: 0 32rpx; border-radius: 8rpx;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--primary-color); font-size: var(--font-sm, 24rpx);
+}
+
+.font-xl .health-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20rpx 12rpx;
+}
+.font-xl .metric-divider { display: none; }
+
+@media screen and (max-width: 360px) {
+  .health-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20rpx 12rpx;
+  }
+  .metric-divider { display: none; }
+  .metric-item { min-width: 0; }
 }
 
 .update-time {

@@ -8,6 +8,22 @@ const DEFAULT_BASE_URL = 'http://192.168.1.100:8080'
 
 // Token 请求头名称（与 RuoYi 保持一致）
 const TOKEN_HEADER = 'Authorization'
+let authRedirecting = false
+
+function redirectToLogin() {
+  uni.removeStorageSync('yl_token')
+  if (authRedirecting) return
+  authRedirecting = true
+  uni.showToast({ title: '登录已过期，请重新登录', icon: 'none', duration: 1800 })
+  setTimeout(() => {
+    uni.reLaunch({
+      url: '/pages-auth/login/index',
+      complete: () => {
+        setTimeout(() => { authRedirecting = false }, 500)
+      }
+    })
+  }, 500)
+}
 
 /**
  * 获取当前配置的后台地址（动态读取，每次请求都取最新值）
@@ -36,7 +52,7 @@ function request(options) {
     uni.request({
       url: baseUrl + options.url,
       method: options.method || 'GET',
-      data: options.data || {},
+      data: options.data === undefined ? {} : options.data,
       header: {
         'Content-Type': 'application/json',
         ...(token ? { [TOKEN_HEADER]: 'Bearer ' + token } : {}),
@@ -48,27 +64,30 @@ function request(options) {
 
         // HTTP 层错误
         if (statusCode === 401) {
-          uni.removeStorageSync('yl_token')
-          uni.showToast({ title: '登录已过期，请重新登录', icon: 'none', duration: 2000 })
-          setTimeout(() => {
-            uni.reLaunch({ url: '/pages-auth/login/index' })
-          }, 1500)
+          redirectToLogin()
           return reject(new Error('Unauthorized'))
         }
 
-        if (statusCode !== 200) {
-          uni.showToast({ title: `请求失败 (${statusCode})`, icon: 'none' })
-          return reject(new Error(`HTTP ${statusCode}`))
+        if (statusCode < 200 || statusCode >= 300) {
+          const msg = data && typeof data === 'object' && data.msg
+            ? data.msg
+            : `请求失败 (${statusCode})`
+          uni.showToast({ title: msg, icon: 'none' })
+          return reject(new Error(msg))
         }
 
         // 业务层错误（RuoYi code 200 = 成功）
-        if (data.code !== undefined && data.code !== 200) {
+        if (data && typeof data === 'object' && data.code === 401) {
+          redirectToLogin()
+          return reject(new Error('Unauthorized'))
+        }
+        if (data && typeof data === 'object' && data.code !== undefined && data.code !== 200) {
           const msg = data.msg || '操作失败'
           uni.showToast({ title: msg, icon: 'none', duration: 2000 })
           return reject(new Error(msg))
         }
 
-        resolve(data)
+        resolve(data ?? null)
       },
       fail(err) {
         const msg = err.errMsg || '网络连接失败'

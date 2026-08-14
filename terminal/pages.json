@@ -40,9 +40,8 @@
         {
           "path": "alerts/index",
           "style": {
-            "navigationBarTitleText": "健康告警",
-            "navigationBarBackgroundColor": "#4A90D9",
-            "navigationBarTextStyle": "white"
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
           }
         }
       ]
@@ -62,9 +61,8 @@
         {
           "path": "records/index",
           "style": {
-            "navigationBarTitleText": "护理记录",
-            "navigationBarBackgroundColor": "#4A90D9",
-            "navigationBarTextStyle": "white"
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
           }
         }
       ]
@@ -84,9 +82,8 @@
         {
           "path": "list/index",
           "style": {
-            "navigationBarTitleText": "设备列表",
-            "navigationBarBackgroundColor": "#4A90D9",
-            "navigationBarTextStyle": "white"
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
           }
         }
       ]
@@ -106,17 +103,15 @@
         {
           "path": "theme/index",
           "style": {
-            "navigationBarTitleText": "主题换肤",
-            "navigationBarBackgroundColor": "#4A90D9",
-            "navigationBarTextStyle": "white"
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
           }
         },
         {
           "path": "font/index",
           "style": {
-            "navigationBarTitleText": "字体大小",
-            "navigationBarBackgroundColor": "#4A90D9",
-            "navigationBarTextStyle": "white"
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
           }
         },
         {
@@ -151,17 +146,15 @@
         {
           "path": "apply/index",
           "style": {
-            "navigationBarTitleText": "新建采购申请",
-            "navigationBarBackgroundColor": "#4A90D9",
-            "navigationBarTextStyle": "white"
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
           }
         },
         {
           "path": "detail/index",
           "style": {
-            "navigationBarTitleText": "采购单详情",
-            "navigationBarBackgroundColor": "#4A90D9",
-            "navigationBarTextStyle": "white"
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
           }
         }
       ]
@@ -195,6 +188,13 @@
       "pages": [
         {
           "path": "index/index",
+          "style": {
+            "navigationStyle": "custom",
+            "app-plus": { "titleNView": false }
+          }
+        },
+        {
+          "path": "profit/index",
           "style": {
             "navigationStyle": "custom",
             "app-plus": { "titleNView": false }
