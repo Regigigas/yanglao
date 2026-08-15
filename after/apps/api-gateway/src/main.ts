@@ -5,6 +5,8 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 import * as jwt from 'jsonwebtoken';
 import Redis from 'ioredis';
 import type { NextFunction, Request, Response } from 'express';
+import { RuntimeConfig } from '@app/config';
+import { createMathCaptcha, hasPermission, requiredPermission } from '@app/security';
 import { GatewayModule } from './app.module';
 
 const publicPaths = new Set(['/auth/login', '/auth/register', '/auth/logout', '/code', '/health']);
@@ -15,6 +17,11 @@ const logger = new Logger('GatewayAuth');
 
 function isPublic(path: string): boolean {
   return publicPaths.has(path) || path.startsWith('/file/statics/') || path.endsWith('/v3/api-docs') || path.includes('/docs');
+}
+
+function matchesPattern(value: string, pattern: string): boolean {
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*');
+  return new RegExp(`^${escaped}$`).test(value);
 }
 
 async function sessionIsValid(userKey: string): Promise<boolean> {
@@ -28,6 +35,11 @@ async function sessionIsValid(userKey: string): Promise<boolean> {
 }
 
 async function authentication(request: Request, response: Response, next: NextFunction): Promise<void> {
+  const blocked = RuntimeConfig.list('BLACKLIST_URLS');
+  if (blocked.some((pattern) => matchesPattern(request.path, pattern))) {
+    response.status(403).json({ code: 403, msg: '请求地址已被安全策略禁止' });
+    return;
+  }
   if (request.method === 'OPTIONS' || isPublic(request.path)) {
     next();
     return;
@@ -49,6 +61,12 @@ async function authentication(request: Request, response: Response, next: NextFu
     request.headers.username = encodeURIComponent(String(claims.username));
     if (Array.isArray(claims.roles)) request.headers.roles = encodeURIComponent(JSON.stringify(claims.roles));
     if (Array.isArray(claims.permissions)) request.headers.permissions = encodeURIComponent(JSON.stringify(claims.permissions));
+    const required = requiredPermission(request.method, request.path);
+    const permissions = Array.isArray(claims.permissions) ? claims.permissions.map(String) : [];
+    if (required && !hasPermission(permissions, required)) {
+      response.status(403).json({ code: 403, msg: `没有访问权限: ${required}` });
+      return;
+    }
     delete request.headers['from-source'];
     next();
   } catch (error) {
@@ -58,11 +76,26 @@ async function authentication(request: Request, response: Response, next: NextFu
 }
 
 async function bootstrap(): Promise<void> {
+  RuntimeConfig.validateProduction();
   const app = await NestFactory.create(GatewayModule, { cors: true });
   app.use(authentication);
   const express = app.getHttpAdapter().getInstance();
-  express.get('/code', (_request: Request, response: Response) => {
-    response.json({ code: 200, msg: '操作成功', captchaEnabled: false, uuid: '', img: '' });
+  express.get('/code', async (_request: Request, response: Response) => {
+    const captchaEnabled = RuntimeConfig.boolean('CAPTCHA_ENABLED', false);
+    if (!captchaEnabled) {
+      response.json({ code: 200, msg: '操作成功', captchaEnabled: false, uuid: '', img: '' });
+      return;
+    }
+    try {
+      if (!redisConnected) { await redis.connect(); redisConnected = true; }
+      const challenge = createMathCaptcha();
+      await redis.set(`captcha_codes:${challenge.uuid}`, JSON.stringify(challenge.answer), 'EX', RuntimeConfig.number('CAPTCHA_TTL_SECONDS', 120));
+      response.json({ code: 200, msg: '操作成功', captchaEnabled: true, uuid: challenge.uuid, img: challenge.image });
+    } catch (error) {
+      redisConnected = false;
+      logger.error(`Captcha storage failed: ${error instanceof Error ? error.message : String(error)}`);
+      response.status(503).json({ code: 503, msg: '验证码服务暂不可用' });
+    }
   });
   const proxies: Array<[string, string]> = [
     ['/auth', process.env.AUTH_SERVICE_URL ?? 'http://127.0.0.1:9200'],

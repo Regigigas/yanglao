@@ -14,7 +14,7 @@
 | `apps/file-service` | `file-service` | 文件存储 | 9300 |
 | `apps/monitor-service` | `monitor-service` | 健康检查和指标 | 9100 |
 
-代码文件遵循 NestJS 社区惯例：`*.module.ts`、`*.controller.ts`、`*.service.ts`、`*.dto.ts`。共享基础设施放入 `libs/common`，业务代码不反向依赖网关。
+代码文件遵循 NestJS 社区惯例：`*.module.ts`、`*.controller.ts`、`*.service.ts`、`*.dto.ts`。数据库与 Redis 基础设施放入 `libs/common`，运行配置放入 `libs/config`，接口权限、通配权限和验证码放入 `libs/security`，业务代码不反向依赖网关。
 
 ## 请求链路
 
@@ -42,7 +42,7 @@ MySQL / Redis / uploads
 
 - Nacos 服务发现 → Docker DNS + 环境变量路由。
 - Spring Cloud Gateway → NestJS + `http-proxy-middleware`。
-- Spring Security / Redis Token → HS512 JWT + Redis 会话。
+- Spring Security / Redis Token → HS512 JWT + Redis 会话，并保留菜单权限字符和数据范围校验。
 - MyBatis → 参数化 `mysql2` 数据访问层。
 - Quartz → `@nestjs/schedule` + 数据库任务配置。
 - Spring Boot Admin → 独立 Monitor service。

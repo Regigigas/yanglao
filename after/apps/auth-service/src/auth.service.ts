@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import * as jwt from 'jsonwebtoken';
 import type { SignOptions } from 'jsonwebtoken';
 import { DatabaseService, RedisService, type DataRecord } from '@app/common';
+import { RuntimeConfig } from '@app/config';
 
 interface LoginUserRow extends DataRecord {
   userId: number;
@@ -18,7 +19,8 @@ interface LoginUserRow extends DataRecord {
 export class AuthService {
   constructor(private readonly database: DatabaseService, private readonly redis: RedisService) {}
 
-  async login(usernameInput: unknown, passwordInput: unknown, ipAddress: string): Promise<DataRecord> {
+  async login(usernameInput: unknown, passwordInput: unknown, codeInput: unknown, uuidInput: unknown, ipAddress: string): Promise<DataRecord> {
+    await this.validateCaptcha(codeInput, uuidInput);
     const username = String(usernameInput ?? '').trim();
     const password = String(passwordInput ?? '');
     if (username.length < 2 || username.length > 20 || password.length < 5 || password.length > 100) {
@@ -64,7 +66,8 @@ export class AuthService {
     return { access_token: accessToken, expires_in: this.expireMinutes() };
   }
 
-  async register(usernameInput: unknown, passwordInput: unknown): Promise<void> {
+  async register(usernameInput: unknown, passwordInput: unknown, codeInput: unknown, uuidInput: unknown): Promise<void> {
+    await this.validateCaptcha(codeInput, uuidInput);
     const username = String(usernameInput ?? '').trim();
     const password = String(passwordInput ?? '');
     if (username.length < 2 || username.length > 20) throw new BadRequestException('账户长度必须在2到20个字符之间');
@@ -103,6 +106,18 @@ export class AuthService {
   private expireMinutes(): number {
     const match = /^(\d+)m$/.exec(process.env.JWT_EXPIRES_IN ?? '720m');
     return match ? Number(match[1]) : 720;
+  }
+
+  private async validateCaptcha(codeInput: unknown, uuidInput: unknown): Promise<void> {
+    if (!RuntimeConfig.boolean('CAPTCHA_ENABLED', false)) return;
+    const uuid = String(uuidInput ?? '').trim();
+    const code = String(codeInput ?? '').trim();
+    if (!uuid || !code) throw new BadRequestException('验证码不能为空');
+    const key = `captcha_codes:${uuid}`;
+    const expected = await this.redis.getJson<string>(key);
+    await this.redis.delete(key);
+    if (!expected) throw new BadRequestException('验证码已失效');
+    if (String(expected).toLowerCase() !== code.toLowerCase()) throw new BadRequestException('验证码错误');
   }
 
   private async recordLogin(username: string, status: string, message: string, ipAddress: string): Promise<void> {

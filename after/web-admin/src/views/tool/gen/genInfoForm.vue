@@ -24,8 +24,8 @@
       <el-col :span="12">
         <el-form-item prop="packageName">
           <span slot="label">
-            源码目录
-            <el-tooltip content="NestJS 模块源码目录，例如 apps/system-service/src" placement="top">
+            生成包路径
+            <el-tooltip content="生成在哪个java包下，例如 com.ruoyi.system" placement="top">
               <i class="el-icon-question"></i>
             </el-tooltip>
           </span>
@@ -274,7 +274,7 @@ export default {
           { required: true, message: "请选择生成模板", trigger: "blur" }
         ],
         packageName: [
-          { required: true, message: "请输入源码目录", trigger: "blur" }
+          { required: true, message: "请输入生成包路径", trigger: "blur" }
         ],
         moduleName: [
           { required: true, message: "请输入生成模块名", trigger: "blur" }

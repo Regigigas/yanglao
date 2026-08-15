@@ -52,7 +52,7 @@ export class CodegenService {
       const className = this.pascal(tableName.replace(/^[a-z]+_/, ''));
       const created = await this.database.execute(
         `INSERT INTO gen_table(table_name,table_comment,sub_table_name,sub_table_fk_name,class_name,tpl_category,tpl_web_type,package_name,module_name,business_name,function_name,function_author,gen_type,gen_path,options,create_by,create_time,update_time,remark)
-         VALUES(?,?,'','',?,'crud',?,'apps/system-service/src',?,?,?,'yanglao','0','/', '{}','system',NOW(),NOW(),'NestJS codegen')`,
+         VALUES(?,?,'','',?,'crud',?,'com.yanglao',?,?,?,'yanglao','0','/', '{}','system',NOW(),NOW(),'NestJS codegen migration')`,
         [tableName, tables[0].tableComment || tableName, className, template, tableName.split('_')[0] || 'system', this.kebab(className), tables[0].tableComment || className],
       );
       await this.syncColumns(created.insertId, tableName);
@@ -62,7 +62,7 @@ export class CodegenService {
   async update(input: DataRecord): Promise<void> {
     await this.database.execute(
       `UPDATE gen_table SET table_comment=?,class_name=?,tpl_category=?,tpl_web_type=?,package_name=?,module_name=?,business_name=?,function_name=?,function_author=?,gen_type=?,gen_path=?,options=?,update_time=NOW() WHERE table_id=?`,
-      [String(input.tableComment ?? ''), String(input.className ?? ''), String(input.tplCategory ?? 'crud'), String(input.tplWebType ?? 'element-ui'), String(input.packageName ?? 'apps/system-service/src'), String(input.moduleName ?? 'system'), String(input.businessName ?? ''), String(input.functionName ?? ''), String(input.functionAuthor ?? 'yanglao'), String(input.genType ?? '0'), String(input.genPath ?? '/'), typeof input.options === 'string' ? input.options : JSON.stringify(input.options ?? {}), Number(input.tableId)],
+      [String(input.tableComment ?? ''), String(input.className ?? ''), String(input.tplCategory ?? 'crud'), String(input.tplWebType ?? 'element-ui'), String(input.packageName ?? 'com.yanglao'), String(input.moduleName ?? 'system'), String(input.businessName ?? ''), String(input.functionName ?? ''), String(input.functionAuthor ?? 'yanglao'), String(input.genType ?? '0'), String(input.genPath ?? '/'), typeof input.options === 'string' ? input.options : JSON.stringify(input.options ?? {}), Number(input.tableId)],
     );
     if (Array.isArray(input.columns)) {
       for (const column of input.columns as DataRecord[]) {

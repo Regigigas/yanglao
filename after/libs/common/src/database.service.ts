@@ -33,8 +33,8 @@ export class DatabaseService implements OnModuleDestroy {
     return rows;
   }
 
-  async execute(sql: string, values: Primitive[] = []): Promise<ResultSetHeader> {
-    const [result] = await this.pool.execute<ResultSetHeader>(sql, values);
+  async execute(sql: string, values: Primitive[] = [], connection?: PoolConnection): Promise<ResultSetHeader> {
+    const [result] = await (connection ?? this.pool).execute<ResultSetHeader>(sql, values);
     return result;
   }
 
@@ -53,10 +53,18 @@ export class DatabaseService implements OnModuleDestroy {
     }
   }
 
-  async list(resource: CrudResource, query: PageQuery): Promise<{ rows: DataRecord[]; total: number }> {
+  async list(
+    resource: CrudResource,
+    query: PageQuery,
+    scope?: { clause: string; values: Primitive[] },
+  ): Promise<{ rows: DataRecord[]; total: number }> {
     const values: Primitive[] = [];
     const conditions: string[] = [];
     if (resource.softDelete) conditions.push("del_flag = '0'");
+    if (scope?.clause) {
+      conditions.push(`(${scope.clause})`);
+      values.push(...scope.values);
+    }
     for (const field of resource.like ?? []) {
       const value = query[field];
       if (typeof value === 'string' && value.trim()) {
@@ -98,7 +106,7 @@ export class DatabaseService implements OnModuleDestroy {
     return rows[0] ?? null;
   }
 
-  async insert(resource: CrudResource, input: DataRecord, auditUser?: string): Promise<ResultSetHeader> {
+  async insert(resource: CrudResource, input: DataRecord, auditUser?: string, connection?: PoolConnection): Promise<ResultSetHeader> {
     const allowed = new Set(resource.columns.map(camelToSnake));
     const entries = Object.entries(input)
       .map(([key, value]) => [camelToSnake(key), value] as const)
@@ -110,10 +118,11 @@ export class DatabaseService implements OnModuleDestroy {
     return this.execute(
       `INSERT INTO \`${resource.table}\` (${columns}) VALUES (${placeholders})`,
       entries.map(([, value]) => this.toPrimitive(value)),
+      connection,
     );
   }
 
-  async update(resource: CrudResource, input: DataRecord, auditUser?: string): Promise<ResultSetHeader> {
+  async update(resource: CrudResource, input: DataRecord, auditUser?: string, connection?: PoolConnection): Promise<ResultSetHeader> {
     const camelId = resource.id.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
     const id = input[camelId] ?? input[resource.id];
     if (id === undefined || id === null) throw new Error(`${camelId} 不能为空`);
@@ -127,15 +136,16 @@ export class DatabaseService implements OnModuleDestroy {
     return this.execute(
       `UPDATE \`${resource.table}\` SET ${entries.map(([key]) => `\`${key}\` = ?`).join(', ')} WHERE \`${resource.id}\` = ?`,
       [...entries.map(([, value]) => this.toPrimitive(value)), this.toPrimitive(id)],
+      connection,
     );
   }
 
-  async remove(resource: CrudResource, ids: Primitive[]): Promise<ResultSetHeader> {
+  async remove(resource: CrudResource, ids: Primitive[], connection?: PoolConnection): Promise<ResultSetHeader> {
     if (!ids.length) throw new Error('请选择要删除的数据');
     const placeholders = ids.map(() => '?').join(', ');
     return resource.softDelete
-      ? this.execute(`UPDATE \`${resource.table}\` SET del_flag = '2' WHERE \`${resource.id}\` IN (${placeholders})`, ids)
-      : this.execute(`DELETE FROM \`${resource.table}\` WHERE \`${resource.id}\` IN (${placeholders})`, ids);
+      ? this.execute(`UPDATE \`${resource.table}\` SET del_flag = '2' WHERE \`${resource.id}\` IN (${placeholders})`, ids, connection)
+      : this.execute(`DELETE FROM \`${resource.table}\` WHERE \`${resource.id}\` IN (${placeholders})`, ids, connection);
   }
 
   private toPrimitive(value: unknown): Primitive {

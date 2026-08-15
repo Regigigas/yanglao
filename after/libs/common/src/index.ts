@@ -5,3 +5,5 @@ export * from './database.service';
 export * from './response';
 export * from './redis.service';
 export * from './types';
+export * from './xss.interceptor';
+export * from './xss.interceptor';

@@ -1,14 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { compare, hash } from 'bcryptjs';
-import { DatabaseService, type DataRecord, type PageQuery } from '@app/common';
+import type { PoolConnection } from 'mysql2/promise';
+import { DatabaseService, type DataRecord, type PageQuery, type Primitive } from '@app/common';
 import { DEPT_RESOURCE, MENU_RESOURCE, ROLE_RESOURCE, USER_RESOURCE } from './resources';
 
 @Injectable()
 export class SystemService {
   constructor(private readonly database: DatabaseService) {}
 
-  async listUsers(query: PageQuery): Promise<{ rows: DataRecord[]; total: number }> {
-    const result = await this.database.list(USER_RESOURCE, query);
+  async listUsers(query: PageQuery, currentUserId: number): Promise<{ rows: DataRecord[]; total: number }> {
+    const result = await this.database.list(USER_RESOURCE, query, await this.dataScope(currentUserId, 'dept_id', 'user_id'));
     const deptIds = [...new Set(result.rows.map((row) => Number(row.deptId)).filter(Boolean))];
     const depts = deptIds.length
       ? await this.database.query(`SELECT dept_id,dept_name,leader FROM sys_dept WHERE dept_id IN (${deptIds.map(() => '?').join(',')})`, deptIds)
@@ -67,18 +68,22 @@ export class SystemService {
     if (existing.length) throw new BadRequestException(`新增用户 ${account} 失败，登录账号已存在`);
     input.password = await hash(String(input.password ?? '123456'), 10);
     input.delFlag = '0';
-    const created = await this.database.insert(USER_RESOURCE, input, username);
-    await this.replaceUserRelations(created.insertId, input.roleIds, input.postIds);
-    return created.affectedRows;
+    return this.database.transaction(async (connection) => {
+      const created = await this.database.insert(USER_RESOURCE, input, username, connection);
+      await this.replaceUserRelations(created.insertId, input.roleIds, input.postIds, connection);
+      return created.affectedRows;
+    });
   }
 
   async updateUser(input: DataRecord, username: string): Promise<number> {
     const userId = Number(input.userId);
     if (userId === 1 && String(input.status ?? '0') !== '0') throw new BadRequestException('不允许停用超级管理员');
     delete input.password;
-    const result = await this.database.update(USER_RESOURCE, input, username);
-    await this.replaceUserRelations(userId, input.roleIds, input.postIds);
-    return result.affectedRows;
+    return this.database.transaction(async (connection) => {
+      const result = await this.database.update(USER_RESOURCE, input, username, connection);
+      await this.replaceUserRelations(userId, input.roleIds, input.postIds, connection);
+      return result.affectedRows;
+    });
   }
 
   async removeUsers(ids: number[]): Promise<number> {
@@ -113,8 +118,23 @@ export class SystemService {
     return (await this.database.execute('UPDATE sys_user SET avatar=?,update_time=NOW() WHERE user_id=?', [avatar, userId])).affectedRows;
   }
 
-  async listRoles(query: PageQuery): Promise<{ rows: DataRecord[]; total: number }> {
-    return this.database.list(ROLE_RESOURCE, query);
+  async listRoles(query: PageQuery, currentUserId: number): Promise<{ rows: DataRecord[]; total: number }> {
+    if (currentUserId === 1) return this.database.list(ROLE_RESOURCE, query);
+    const scope = await this.dataScope(currentUserId, 'd.dept_id');
+    if (!scope) return this.database.list(ROLE_RESOURCE, query);
+    const allowed = await this.database.query<{ roleId: number }>(
+      `SELECT DISTINCT r.role_id FROM sys_role r
+       LEFT JOIN sys_user_role ur ON ur.role_id=r.role_id
+       LEFT JOIN sys_user u ON u.user_id=ur.user_id
+       LEFT JOIN sys_dept d ON d.dept_id=u.dept_id
+       WHERE ${scope.clause}`,
+      scope.values,
+    );
+    const roleIds = allowed.map((row) => Number(row.roleId));
+    return this.database.list(ROLE_RESOURCE, query, {
+      clause: roleIds.length ? `role_id IN (${roleIds.map(() => '?').join(',')})` : '1=0',
+      values: roleIds,
+    });
   }
 
   async roleDetail(roleId: number): Promise<DataRecord | null> {
@@ -127,19 +147,23 @@ export class SystemService {
       create ? [String(input.roleName), String(input.roleKey)] : [String(input.roleName), String(input.roleKey), Number(input.roleId)],
     );
     if (duplicate.length) throw new BadRequestException('角色名称或权限字符已存在');
-    const result = create ? await this.database.insert(ROLE_RESOURCE, { ...input, delFlag: '0' }, username) : await this.database.update(ROLE_RESOURCE, input, username);
-    const roleId = create ? result.insertId : Number(input.roleId);
-    if (Array.isArray(input.menuIds)) {
-      await this.database.execute('DELETE FROM sys_role_menu WHERE role_id=?', [roleId]);
-      for (const menuId of input.menuIds) await this.database.execute('INSERT INTO sys_role_menu(role_id,menu_id) VALUES(?,?)', [roleId, Number(menuId)]);
-    }
-    if (Array.isArray(input.deptIds)) await this.setRoleDepartments(roleId, input.deptIds);
-    return result.affectedRows;
+    return this.database.transaction(async (connection) => {
+      const result = create
+        ? await this.database.insert(ROLE_RESOURCE, { ...input, delFlag: '0' }, username, connection)
+        : await this.database.update(ROLE_RESOURCE, input, username, connection);
+      const roleId = create ? result.insertId : Number(input.roleId);
+      if (Array.isArray(input.menuIds)) {
+        await this.database.execute('DELETE FROM sys_role_menu WHERE role_id=?', [roleId], connection);
+        for (const menuId of input.menuIds) await this.database.execute('INSERT INTO sys_role_menu(role_id,menu_id) VALUES(?,?)', [roleId, Number(menuId)], connection);
+      }
+      if (Array.isArray(input.deptIds)) await this.setRoleDepartments(roleId, input.deptIds, connection);
+      return result.affectedRows;
+    });
   }
 
-  async setRoleDepartments(roleId: number, deptIds: unknown): Promise<void> {
-    await this.database.execute('DELETE FROM sys_role_dept WHERE role_id=?', [roleId]);
-    if (Array.isArray(deptIds)) for (const deptId of deptIds) await this.database.execute('INSERT INTO sys_role_dept(role_id,dept_id) VALUES(?,?)', [roleId, Number(deptId)]);
+  async setRoleDepartments(roleId: number, deptIds: unknown, connection?: PoolConnection): Promise<void> {
+    await this.database.execute('DELETE FROM sys_role_dept WHERE role_id=?', [roleId], connection);
+    if (Array.isArray(deptIds)) for (const deptId of deptIds) await this.database.execute('INSERT INTO sys_role_dept(role_id,dept_id) VALUES(?,?)', [roleId, Number(deptId)], connection);
   }
 
   async setUserRoles(userId: number, roleIds: number[]): Promise<void> {
@@ -159,8 +183,8 @@ export class SystemService {
     return { rows: rows.map((row) => ({ ...row, password: undefined })), total: rows.length };
   }
 
-  async listDepartments(query: PageQuery): Promise<DataRecord[]> {
-    return (await this.database.list(DEPT_RESOURCE, { ...query, pageSize: 500 })).rows;
+  async listDepartments(query: PageQuery, currentUserId: number): Promise<DataRecord[]> {
+    return (await this.database.list(DEPT_RESOURCE, { ...query, pageSize: 500 }, await this.dataScope(currentUserId, 'dept_id'))).rows;
   }
 
   async saveDepartment(input: DataRecord, username: string, create: boolean): Promise<number> {
@@ -215,12 +239,59 @@ export class SystemService {
     }
   }
 
-  private async replaceUserRelations(userId: number, roleIds: unknown, postIds: unknown): Promise<void> {
-    if (Array.isArray(roleIds)) await this.setUserRoles(userId, roleIds.map(Number));
-    if (Array.isArray(postIds)) {
-      await this.database.execute('DELETE FROM sys_user_post WHERE user_id=?', [userId]);
-      for (const postId of postIds) await this.database.execute('INSERT INTO sys_user_post(user_id,post_id) VALUES(?,?)', [userId, Number(postId)]);
+  private async replaceUserRelations(userId: number, roleIds: unknown, postIds: unknown, connection?: PoolConnection): Promise<void> {
+    if (Array.isArray(roleIds)) {
+      await this.database.execute('DELETE FROM sys_user_role WHERE user_id=?', [userId], connection);
+      for (const roleId of roleIds.map(Number)) await this.database.execute('INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)', [userId, roleId], connection);
     }
+    if (Array.isArray(postIds)) {
+      await this.database.execute('DELETE FROM sys_user_post WHERE user_id=?', [userId], connection);
+      for (const postId of postIds) await this.database.execute('INSERT INTO sys_user_post(user_id,post_id) VALUES(?,?)', [userId, Number(postId)], connection);
+    }
+  }
+
+  private async dataScope(userId: number, deptColumn: string, userColumn?: string): Promise<{ clause: string; values: Primitive[] } | undefined> {
+    if (userId === 1) return undefined;
+    const users = await this.database.query<{ deptId: number }>('SELECT dept_id FROM sys_user WHERE user_id=? AND del_flag=\'0\' LIMIT 1', [userId]);
+    const deptId = Number(users[0]?.deptId ?? 0);
+    const roles = await this.database.query<{ roleId: number; dataScope: string }>(
+      "SELECT r.role_id,r.data_scope FROM sys_role r JOIN sys_user_role ur ON ur.role_id=r.role_id WHERE ur.user_id=? AND r.status='0' AND r.del_flag='0'",
+      [userId],
+    );
+    if (roles.some((role) => role.dataScope === '1')) return undefined;
+
+    const departmentIds = new Set<number>();
+    let includeSelf = false;
+    for (const role of roles) {
+      if (role.dataScope === '2') {
+        const rows = await this.database.query<{ deptId: number }>('SELECT dept_id FROM sys_role_dept WHERE role_id=?', [role.roleId]);
+        rows.forEach((row) => departmentIds.add(Number(row.deptId)));
+      } else if (role.dataScope === '3' && deptId) {
+        departmentIds.add(deptId);
+      } else if (role.dataScope === '4' && deptId) {
+        const rows = await this.database.query<{ deptId: number }>(
+          'SELECT dept_id FROM sys_dept WHERE dept_id=? OR FIND_IN_SET(?,ancestors)',
+          [deptId, deptId],
+        );
+        rows.forEach((row) => departmentIds.add(Number(row.deptId)));
+      } else if (role.dataScope === '5') {
+        includeSelf = true;
+        if (!userColumn && deptId) departmentIds.add(deptId);
+      }
+    }
+
+    const clauses: string[] = [];
+    const values: Primitive[] = [];
+    if (departmentIds.size) {
+      const ids = [...departmentIds];
+      clauses.push(`${deptColumn} IN (${ids.map(() => '?').join(',')})`);
+      values.push(...ids);
+    }
+    if (includeSelf && userColumn) {
+      clauses.push(`${userColumn} = ?`);
+      values.push(userId);
+    }
+    return { clause: clauses.length ? clauses.join(' OR ') : '1=0', values };
   }
 
   private buildTree(

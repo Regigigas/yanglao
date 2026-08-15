@@ -102,12 +102,13 @@ export class SchedulerService implements OnModuleInit {
   }
 
   private async invoke(target: string): Promise<unknown> {
-    const name = target.replace(/\(.*$/, '').trim();
+    const name = target.replace(/^ryTask\./, '').replace(/\(.*$/, '');
     const args = [...target.matchAll(/['"]([^'"]*)['"]/g)].map((match) => match[1]);
     const handlers: Record<string, (...values: string[]) => unknown> = {
+      ryNoParams: () => 'ryNoParams completed',
+      ryParams: (value) => `ryParams completed: ${value ?? ''}`,
+      ryMultipleParams: (...values) => `ryMultipleParams completed: ${values.join(',')}`,
       heartbeat: () => ({ ok: true, timestamp: Date.now() }),
-      echo: (value) => `echo completed: ${value ?? ''}`,
-      join: (...values) => `join completed: ${values.join(',')}`,
     };
     const handler = handlers[name];
     if (!handler) throw new Error(`未注册的 NestJS 任务处理器: ${target}`);

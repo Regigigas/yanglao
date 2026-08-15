@@ -104,7 +104,7 @@
           <dict-tag :options="dict.type.sys_job_group" :value="scope.row.jobGroup"/>
         </template>
       </el-table-column>
-      <el-table-column label="任务处理器" align="center" prop="invokeTarget" :show-overflow-tooltip="true" />
+      <el-table-column label="调用目标字符串" align="center" prop="invokeTarget" :show-overflow-tooltip="true" />
       <el-table-column label="cron执行表达式" align="center" prop="cronExpression" :show-overflow-tooltip="true" />
       <el-table-column label="状态" align="center">
         <template slot-scope="scope">
@@ -177,17 +177,17 @@
           <el-col :span="24">
             <el-form-item prop="invokeTarget">
               <span slot="label">
-                任务处理器
+                调用方法
                 <el-tooltip placement="top">
                   <div slot="content">
-                    已注册处理器：heartbeat、echo、join
-                    <br />调用示例：echo('nest')、join('nest', 'scheduler')
-                    <br />只允许执行服务端已注册的安全处理器
+                    Bean调用示例：ryTask.ryParams('ry')
+                    <br />Class类调用示例：com.ruoyi.quartz.task.RyTask.ryParams('ry')
+                    <br />参数说明：支持字符串，布尔类型，长整型，浮点型，整型
                   </div>
                   <i class="el-icon-question"></i>
                 </el-tooltip>
               </span>
-              <el-input v-model="form.invokeTarget" placeholder="请输入已注册的任务处理器" />
+              <el-input v-model="form.invokeTarget" placeholder="请输入调用目标字符串" />
             </el-form-item>
           </el-col>
           <el-col :span="24">
@@ -298,7 +298,7 @@ export default {
           { required: true, message: "任务名称不能为空", trigger: "blur" }
         ],
         invokeTarget: [
-          { required: true, message: "任务处理器不能为空", trigger: "blur" }
+          { required: true, message: "调用目标字符串不能为空", trigger: "blur" }
         ],
         cronExpression: [
           { required: true, message: "cron执行表达式不能为空", trigger: "blur" }

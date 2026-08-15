@@ -14,7 +14,10 @@ after/
 │  ├─ scheduler-service/ # 数据库任务、Cron 调度与执行日志，9203
 │  ├─ file-service/      # 本地文件上传、下载与安全删除，9300
 │  └─ monitor-service/   # 健康检查和运行指标，9100
-├─ libs/common/          # MySQL、Redis、响应模型和共享工具
+├─ libs/
+│  ├─ common/            # MySQL、Redis、响应模型和共享工具
+│  ├─ config/            # NestJS 运行配置读取与生产环境校验
+│  └─ security/          # 路由权限策略、通配权限和验证码
 ├─ scripts/              # 整组启动与发布包脚本
 ├─ web-admin/            # 原 Vue 2 管理端（目录名规范化）
 ├─ sql/                  # 兼容原数据库的初始化脚本
@@ -80,9 +83,9 @@ npm run docker:build
 npm run docker:up
 ```
 
-Compose 会启动 MySQL、Redis、七个 NestJS 服务和 Nginx。Nacos、Sentinel 与 Seata 不再需要；服务发现使用容器 DNS，网关路由使用环境变量，事务在各业务服务内通过 MySQL 事务完成。
+Compose 会启动 MySQL、Redis、七个 NestJS 服务和 Nginx。原 Nacos 配置 SQL 继续保留用于迁移对照；NestJS 运行配置由 `libs/config` 和环境变量提供。原权限字符、角色菜单、数据范围及 Redis 会话逻辑由 `libs/security`、Gateway 和 System service 继续执行。
 
-详细配置见 [DEPLOY.md](./DEPLOY.md)，架构与命名约定见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)。
+详细配置见 [DEPLOY.md](./DEPLOY.md)，架构与命名约定见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)，原 Java 模块与 NestJS 模块的逐项对应见 [docs/MIGRATION_MAP.md](./docs/MIGRATION_MAP.md)。
 
 ## API 兼容范围
 

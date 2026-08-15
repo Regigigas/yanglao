@@ -29,14 +29,14 @@ export class SystemController {
   }
 
   @Get('user/list')
-  async users(@Query() query: PageQuery): Promise<DataRecord> {
-    const result = await this.system.listUsers(query);
+  async users(@Query() query: PageQuery, @Req() request: Request): Promise<DataRecord> {
+    const result = await this.system.listUsers(query, this.userId(request));
     return table(result.rows, result.total);
   }
 
   @Post('user/export')
-  async exportUsers(@Body() query: PageQuery, @Res() response: Response): Promise<void> {
-    const result = await this.system.listUsers({ ...query, pageNum: 1, pageSize: 500 });
+  async exportUsers(@Body() query: PageQuery, @Res() response: Response, @Req() request: Request): Promise<void> {
+    const result = await this.system.listUsers({ ...query, pageNum: 1, pageSize: 500 }, this.userId(request));
     await this.sendWorkbook(response, '用户数据', ['userId', 'userName', 'nickName', 'deptId', 'email', 'phonenumber', 'sex', 'status'], result.rows);
   }
 
@@ -144,8 +144,8 @@ export class SystemController {
   }
 
   @Get('user/deptTree')
-  async userDeptTree(@Query() query: PageQuery): Promise<DataRecord> {
-    return success(this.system.buildTreeSelect(await this.system.listDepartments(query)));
+  async userDeptTree(@Query() query: PageQuery, @Req() request: Request): Promise<DataRecord> {
+    return success(this.system.buildTreeSelect(await this.system.listDepartments(query, this.userId(request))));
   }
 
   @Get('user/profile')
@@ -186,16 +186,16 @@ export class SystemController {
   }
 
   @Get('role/list')
-  async roles(@Query() query: PageQuery): Promise<DataRecord> { const result = await this.system.listRoles(query); return table(result.rows, result.total); }
+  async roles(@Query() query: PageQuery, @Req() request: Request): Promise<DataRecord> { const result = await this.system.listRoles(query, this.userId(request)); return table(result.rows, result.total); }
 
   @Post('role/export')
-  async exportRoles(@Body() query: PageQuery, @Res() response: Response): Promise<void> {
-    const result = await this.system.listRoles({ ...query, pageNum: 1, pageSize: 500 });
+  async exportRoles(@Body() query: PageQuery, @Res() response: Response, @Req() request: Request): Promise<void> {
+    const result = await this.system.listRoles({ ...query, pageNum: 1, pageSize: 500 }, this.userId(request));
     await this.sendWorkbook(response, '角色数据', ['roleId', 'roleName', 'roleKey', 'roleSort', 'dataScope', 'status'], result.rows);
   }
 
   @Get('role/optionselect')
-  async roleOptions(): Promise<DataRecord> { return success((await this.database.list(ROLE_RESOURCE, { pageSize: 500, status: '0' })).rows); }
+  async roleOptions(@Req() request: Request): Promise<DataRecord> { return success((await this.system.listRoles({ pageSize: 500, status: '0' }, this.userId(request))).rows); }
 
   @Get('role/authUser/allocatedList')
   async allocated(@Query() query: PageQuery): Promise<DataRecord> { const result = await this.system.roleUsers(Number(query.roleId), true, query); return table(result.rows, result.total); }
@@ -220,8 +220,8 @@ export class SystemController {
   }
 
   @Get('role/deptTree/:roleId')
-  async roleDeptTree(@Param('roleId') id: string): Promise<DataRecord> {
-    const depts = await this.system.listDepartments({});
+  async roleDeptTree(@Param('roleId') id: string, @Req() request: Request): Promise<DataRecord> {
+    const depts = await this.system.listDepartments({}, this.userId(request));
     const checked = await this.database.query<{ deptId: number }>('SELECT dept_id FROM sys_role_dept WHERE role_id=?', [Number(id)]);
     return successWith({ checkedKeys: checked.map((row) => row.deptId), depts: this.system.buildTreeSelect(depts) });
   }
@@ -242,11 +242,11 @@ export class SystemController {
   async deleteRoles(@Param('ids') ids: string): Promise<DataRecord> { return affected((await this.database.remove(ROLE_RESOURCE, this.numberIds(ids))).affectedRows); }
 
   @Get('dept/list')
-  async departments(@Query() query: PageQuery): Promise<DataRecord> { return success(await this.system.listDepartments(query)); }
+  async departments(@Query() query: PageQuery, @Req() request: Request): Promise<DataRecord> { return success(await this.system.listDepartments(query, this.userId(request))); }
 
   @Get('dept/list/exclude/:deptId')
-  async departmentsExclude(@Param('deptId') id: string): Promise<DataRecord> {
-    const all = await this.system.listDepartments({}); const current = Number(id);
+  async departmentsExclude(@Param('deptId') id: string, @Req() request: Request): Promise<DataRecord> {
+    const all = await this.system.listDepartments({}, this.userId(request)); const current = Number(id);
     return success(all.filter((dept) => Number(dept.deptId) !== current && !String(dept.ancestors ?? '').split(',').includes(id)));
   }
 

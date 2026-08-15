@@ -62,6 +62,16 @@ PREPARE sync_statement FROM @sync_add_owner_cursor_index;
 EXECUTE sync_statement;
 DEALLOCATE PREPARE sync_statement;
 
+UPDATE `config_info`
+SET `content` = REPLACE(
+  `content`,
+  '            # 文件服务',
+  '            # 养老同步服务\n            - id: ruoyi-system-sync\n              uri: lb://ruoyi-system\n              predicates:\n                - Path=/sync/**\n\n            # 文件服务'
+)
+WHERE `data_id` = 'ruoyi-gateway-dev.yml'
+  AND `group_id` = 'DEFAULT_GROUP'
+  AND LOCATE('id: ruoyi-system-sync', `content`) = 0;
+
 INSERT IGNORE INTO `sys_menu`
   (`menu_id`, `menu_name`, `parent_id`, `order_num`, `path`, `component`, `query`, `route_name`,
    `is_frame`, `is_cache`, `menu_type`, `visible`, `status`, `perms`, `icon`, `create_by`, `create_time`,

@@ -7,6 +7,7 @@
 - `JWT_SECRET`：长度足够的随机值；修改后原 Java 版本签发的 token 会全部失效。
 - `DB_PASSWORD`：MySQL 强密码。
 - `REDIS_REQUIRED=true`：强制网关检查登录会话。
+- `CAPTCHA_ENABLED=true`：保持登录、注册数学验证码；验证码存放于 Redis。
 - `FILE_PUBLIC_URL`：外部可访问的文件地址，建议使用 HTTPS 域名。
 
 不要将 `.env`、密码、token 或密钥提交到 Git。
@@ -21,7 +22,7 @@
 4. `sql/yanglao_sync.sql`
 5. `sql/quartz.sql`
 
-Docker Compose 已按这个顺序挂载初始化脚本。原 Nacos 配置库和 Seata 表不再是 NestJS 运行依赖。
+Docker Compose 已按这个顺序挂载初始化脚本。原 Nacos 和 Seata SQL 文件保留作为原系统配置及迁移基线；NestJS 运行时使用环境变量、Redis 会话和服务内事务，不直接依赖 Nacos 或 Seata 进程。
 
 ## 3. 裸机发布
 

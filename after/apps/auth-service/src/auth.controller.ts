@@ -10,7 +10,7 @@ export class AuthController {
 
   @Post('login')
   async login(@Body() body: DataRecord, @Req() request: Request): Promise<DataRecord> {
-    return success(await this.auth.login(body.username, body.password, request.ip ?? ''));
+    return success(await this.auth.login(body.username, body.password, body.code, body.uuid, request.ip ?? ''));
   }
 
   @Delete('logout')
@@ -26,7 +26,7 @@ export class AuthController {
 
   @Post('register')
   async register(@Body() body: DataRecord): Promise<DataRecord> {
-    await this.auth.register(body.username, body.password);
+    await this.auth.register(body.username, body.password, body.code, body.uuid);
     return success();
   }
 
