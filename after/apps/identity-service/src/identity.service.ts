@@ -5,7 +5,7 @@ import { DatabaseService, type DataRecord, type PageQuery, type Primitive } from
 import { DEPT_RESOURCE, MENU_RESOURCE, ROLE_RESOURCE, USER_RESOURCE } from './resources';
 
 @Injectable()
-export class SystemService {
+export class IdentityService {
   constructor(private readonly database: DatabaseService) {}
 
   async listUsers(query: PageQuery, currentUserId: number): Promise<{ rows: DataRecord[]; total: number }> {

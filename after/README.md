@@ -9,9 +9,13 @@ after/
 ├─ apps/
 │  ├─ api-gateway/       # API 网关、JWT/Redis 会话校验，8080
 │  ├─ auth-service/      # 登录、注册、刷新与退出，9200
-│  ├─ system-service/    # 用户、角色、菜单、采购、聊天、同步等，9201
+│  ├─ identity-service/  # 用户、角色、部门、菜单和岗位，9201
 │  ├─ codegen-service/   # 数据表导入与 NestJS CRUD 代码生成，9202
 │  ├─ scheduler-service/ # 数据库任务、Cron 调度与执行日志，9203
+│  ├─ platform-service/  # 参数、字典、通知、审计、在线会话，9204
+│  ├─ procurement-service/ # 供应商与采购订单，9205
+│  ├─ collaboration-service/ # 联系人、私聊与群聊，9206
+│  ├─ sync-service/      # 终端增量同步，9207
 │  ├─ file-service/      # 本地文件上传、下载与安全删除，9300
 │  └─ monitor-service/   # 健康检查和运行指标，9100
 ├─ libs/
@@ -43,13 +47,15 @@ npm run typecheck
 npm run start:dev
 ```
 
-默认会启动七个服务。MySQL 或 Redis 暂时未启动时，进程仍可启动用于接口和健康检查；生产环境应设置 `REDIS_REQUIRED=true`，确保失效会话不能继续访问。
+默认会启动十一个服务。MySQL 或 Redis 暂时未启动时，进程仍可启动用于接口和健康检查；生产环境应设置 `REDIS_REQUIRED=true`，确保失效会话不能继续访问。
 
 单独开发一个服务：
 
 ```powershell
 npm run start:gateway
-npm run start:system
+npm run start:identity
+npm run start:platform
+npm run start:procurement
 npm run start:scheduler
 ```
 
@@ -83,7 +89,7 @@ npm run docker:build
 npm run docker:up
 ```
 
-Compose 会启动 MySQL、Redis、七个 NestJS 服务和 Nginx。原 Nacos 配置 SQL 继续保留用于迁移对照；NestJS 运行配置由 `libs/config` 和环境变量提供。原权限字符、角色菜单、数据范围及 Redis 会话逻辑由 `libs/security`、Gateway 和 System service 继续执行。
+Compose 会启动 MySQL、Redis、十一个 NestJS 服务和 Nginx。原 Nacos 配置 SQL 继续保留用于迁移对照；NestJS 运行配置由 `libs/config` 和环境变量提供。原权限字符、角色菜单、数据范围及 Redis 会话逻辑由 `libs/security`、Gateway 和 Identity service 继续执行。
 
 详细配置见 [DEPLOY.md](./DEPLOY.md)，架构与命名约定见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)，原 Java 模块与 NestJS 模块的逐项对应见 [docs/MIGRATION_MAP.md](./docs/MIGRATION_MAP.md)。
 

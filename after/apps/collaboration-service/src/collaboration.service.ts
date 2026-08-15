@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { DatabaseService, type DataRecord } from '@app/common';
 
 @Injectable()
-export class ChatService {
+export class CollaborationService {
   constructor(private readonly database: DatabaseService) {}
 
   async contacts(userId: number, keywordInput: unknown): Promise<DataRecord[]> {

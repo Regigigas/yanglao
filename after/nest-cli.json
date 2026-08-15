@@ -11,7 +11,11 @@
   "projects": {
     "api-gateway": { "type": "application", "root": "apps/api-gateway", "entryFile": "main", "sourceRoot": "apps/api-gateway/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
     "auth-service": { "type": "application", "root": "apps/auth-service", "entryFile": "main", "sourceRoot": "apps/auth-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
-    "system-service": { "type": "application", "root": "apps/system-service", "entryFile": "main", "sourceRoot": "apps/system-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "identity-service": { "type": "application", "root": "apps/identity-service", "entryFile": "main", "sourceRoot": "apps/identity-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "platform-service": { "type": "application", "root": "apps/platform-service", "entryFile": "main", "sourceRoot": "apps/platform-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "procurement-service": { "type": "application", "root": "apps/procurement-service", "entryFile": "main", "sourceRoot": "apps/procurement-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "collaboration-service": { "type": "application", "root": "apps/collaboration-service", "entryFile": "main", "sourceRoot": "apps/collaboration-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "sync-service": { "type": "application", "root": "apps/sync-service", "entryFile": "main", "sourceRoot": "apps/sync-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
     "codegen-service": { "type": "application", "root": "apps/codegen-service", "entryFile": "main", "sourceRoot": "apps/codegen-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
     "scheduler-service": { "type": "application", "root": "apps/scheduler-service", "entryFile": "main", "sourceRoot": "apps/scheduler-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
     "file-service": { "type": "application", "root": "apps/file-service", "entryFile": "main", "sourceRoot": "apps/file-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },

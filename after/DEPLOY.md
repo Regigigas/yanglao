@@ -44,7 +44,7 @@ npm install --omit=dev
 npm run start:prod
 ```
 
-建议使用 systemd、PM2 或容器编排器负责进程守护。七个进程的入口位于 `dist/apps/<service-name>/main.js`。
+建议使用 systemd、PM2 或容器编排器负责进程守护。十一个进程的入口位于 `dist/apps/<service-name>/main.js`。
 
 ## 4. Docker Compose
 
@@ -66,11 +66,16 @@ MySQL、Redis 和上传文件使用具名 volume；`docker compose down` 不会�
 ## 5. 健康检查
 
 - Gateway：`GET http://localhost:8080/health`
-- File：`GET http://localhost:9300/health`
-- Monitor：`GET http://localhost:9100/health`
-- Metrics：`GET http://localhost:9100/metrics`
+- Identity（内网）：`GET http://identity-service:9201/health`
+- Platform（内网）：`GET http://platform-service:9204/health`
+- Procurement（内网）：`GET http://procurement-service:9205/health`
+- Collaboration（内网）：`GET http://collaboration-service:9206/health`
+- Sync（内网）：`GET http://sync-service:9207/health`
+- File（内网）：`GET http://file-service:9300/health`
+- Monitor（内网）：`GET http://monitor-service:9100/health`
+- Metrics（内网）：`GET http://monitor-service:9100/metrics`
 
-业务接口只通过 Gateway 对外开放。服务端口可仅在内网暴露；示例 Compose 映射端口是为了便于联调，生产环境可移除 9100、9200-9203、9300 的宿主机端口映射。
+业务接口只通过 Gateway 对外开放。示例 Compose 只映射 Gateway 和 Web 端口，其余 NestJS 服务通过 Compose 内部 DNS 通信。
 
 ## 6. 回滚
 

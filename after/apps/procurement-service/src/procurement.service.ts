@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseService, type DataRecord, type PageQuery } from '@app/common';
 
 @Injectable()
-export class PurchaseService {
+export class ProcurementService {
   constructor(private readonly database: DatabaseService) {}
 
   async list(query: PageQuery): Promise<{ rows: DataRecord[]; total: number }> {

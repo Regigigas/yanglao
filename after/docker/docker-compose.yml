@@ -64,7 +64,11 @@ services:
     environment:
       <<: *service-env
       AUTH_SERVICE_URL: http://auth-service:9200
-      SYSTEM_SERVICE_URL: http://system-service:9201
+      IDENTITY_SERVICE_URL: http://identity-service:9201
+      PLATFORM_SERVICE_URL: http://platform-service:9204
+      PROCUREMENT_SERVICE_URL: http://procurement-service:9205
+      COLLABORATION_SERVICE_URL: http://collaboration-service:9206
+      SYNC_SERVICE_URL: http://sync-service:9207
       GENERATOR_SERVICE_URL: http://codegen-service:9202
       SCHEDULER_SERVICE_URL: http://scheduler-service:9203
       FILE_SERVICE_URL: http://file-service:9300
@@ -72,41 +76,74 @@ services:
       - "8080:8080"
     depends_on:
       auth-service: { condition: service_started }
-      system-service: { condition: service_started }
+      identity-service: { condition: service_started }
+      platform-service: { condition: service_started }
+      procurement-service: { condition: service_started }
+      collaboration-service: { condition: service_started }
+      sync-service: { condition: service_started }
       redis: { condition: service_healthy }
 
   auth-service:
     <<: *service
     command: ["node", "dist/apps/auth-service/main.js"]
-    ports: ["9200:9200"]
+    expose: ["9200"]
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
 
-  system-service:
+  identity-service:
     <<: *service
-    command: ["node", "dist/apps/system-service/main.js"]
+    command: ["node", "dist/apps/identity-service/main.js"]
     environment:
       <<: *service-env
       FILE_PUBLIC_URL: ${FILE_PUBLIC_URL:-http://localhost:8080/file/statics}
       UPLOAD_DIR: /app/uploads
-    ports: ["9201:9201"]
+    expose: ["9201"]
     volumes: ["uploads:/app/uploads"]
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
 
+  platform-service:
+    <<: *service
+    command: ["node", "dist/apps/platform-service/main.js"]
+    expose: ["9204"]
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  procurement-service:
+    <<: *service
+    command: ["node", "dist/apps/procurement-service/main.js"]
+    expose: ["9205"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  collaboration-service:
+    <<: *service
+    command: ["node", "dist/apps/collaboration-service/main.js"]
+    expose: ["9206"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  sync-service:
+    <<: *service
+    command: ["node", "dist/apps/sync-service/main.js"]
+    expose: ["9207"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
   codegen-service:
     <<: *service
     command: ["node", "dist/apps/codegen-service/main.js"]
-    ports: ["9202:9202"]
+    expose: ["9202"]
     depends_on:
       mysql: { condition: service_healthy }
 
   scheduler-service:
     <<: *service
     command: ["node", "dist/apps/scheduler-service/main.js"]
-    ports: ["9203:9203"]
+    expose: ["9203"]
     depends_on:
       mysql: { condition: service_healthy }
 
@@ -117,13 +154,13 @@ services:
       <<: *service-env
       UPLOAD_DIR: /app/uploads
       FILE_PUBLIC_URL: ${FILE_PUBLIC_URL:-http://localhost:8080/file/statics}
-    ports: ["9300:9300"]
+    expose: ["9300"]
     volumes: ["uploads:/app/uploads"]
 
   monitor-service:
     <<: *service
     command: ["node", "dist/apps/monitor-service/main.js"]
-    ports: ["9100:9100"]
+    expose: ["9100"]
     depends_on:
       mysql: { condition: service_healthy }
 

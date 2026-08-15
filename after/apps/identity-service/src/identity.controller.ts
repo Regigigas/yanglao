@@ -5,27 +5,20 @@ import { extname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import * as ExcelJS from 'exceljs';
-import { DatabaseService, RedisService, affected, success, successWith, table, type DataRecord, type PageQuery } from '@app/common';
-import { ChatService } from './chat.service';
-import { PurchaseService } from './purchase.service';
-import { SyncService } from './sync.service';
-import { SystemService } from './system.service';
+import { DatabaseService, affected, success, successWith, table, type DataRecord, type PageQuery } from '@app/common';
+import { IdentityService } from './identity.service';
 import { DEPT_RESOURCE, MENU_RESOURCE, ROLE_RESOURCE } from './resources';
 
 @Controller()
-export class SystemController {
+export class IdentityController {
   constructor(
     private readonly database: DatabaseService,
-    private readonly redis: RedisService,
-    private readonly system: SystemService,
-    private readonly purchase: PurchaseService,
-    private readonly chat: ChatService,
-    private readonly sync: SyncService,
+    private readonly system: IdentityService,
   ) {}
 
   @Get('health')
   async health(): Promise<DataRecord> {
-    return { status: (await this.database.ping()) ? 'ok' : 'degraded', service: 'system-service', timestamp: new Date().toISOString() };
+    return { status: (await this.database.ping()) ? 'ok' : 'degraded', service: 'identity-service', timestamp: new Date().toISOString() };
   }
 
   @Get('user/list')
@@ -306,98 +299,9 @@ export class SystemController {
     return affected((await this.database.remove(MENU_RESOURCE, [Number(id)])).affectedRows);
   }
 
-  @Get('purchase/order/list')
-  async purchaseList(@Query() query: PageQuery): Promise<DataRecord> { const result = await this.purchase.list(query); return table(result.rows, result.total); }
-
-  @Get('purchase/order/stats')
-  async purchaseStats(): Promise<DataRecord> { return success(await this.purchase.stats()); }
-
-  @Get('purchase/order/:id/items')
-  async purchaseItems(@Param('id') id: string): Promise<DataRecord> { return success(await this.purchase.items(id)); }
-
-  @Get('purchase/order/:id')
-  async purchaseDetail(@Param('id') id: string): Promise<DataRecord> { return success(await this.purchase.get(id)); }
-
-  @Post('purchase/order')
-  async addPurchase(@Body() body: DataRecord, @Req() request: Request): Promise<DataRecord> { await this.purchase.create(body, this.username(request)); return success(); }
-
-  @Put('purchase/order/:id/status')
-  async purchaseStatus(@Param('id') id: string, @Body() body: DataRecord, @Req() request: Request): Promise<DataRecord> { return affected(await this.purchase.updateStatus(id, String(body.status), this.username(request))); }
-
-  @Delete('purchase/order/:ids')
-  async removePurchases(@Param('ids') ids: string): Promise<DataRecord> { return affected(await this.purchase.remove(ids.split(',').filter(Boolean))); }
-
-  @Post('sync/upload')
-  async uploadChanges(@Body() body: DataRecord, @Req() request: Request): Promise<DataRecord> { return success(await this.sync.upload(body, this.userId(request))); }
-
-  @Post('sync/download')
-  async downloadChanges(@Body() body: DataRecord, @Req() request: Request): Promise<DataRecord> { return success(await this.sync.download(body, this.userId(request))); }
-
-  @Get('chat/contacts')
-  async contacts(@Req() request: Request, @Query('keyword') keyword: string): Promise<DataRecord> { return success(await this.chat.contacts(this.userId(request), keyword)); }
-
-  @Get('chat/me')
-  me(@Req() request: Request): DataRecord { return success({ userId: this.userId(request), userName: this.username(request) }); }
-
-  @Get('chat/conversations')
-  async conversations(@Req() request: Request): Promise<DataRecord> { return success(await this.chat.conversations(this.userId(request))); }
-
-  @Post('chat/conversations/direct')
-  async direct(@Req() request: Request, @Body() body: DataRecord): Promise<DataRecord> { return success(await this.chat.createDirect(this.userId(request), Number(body.peerUserId))); }
-
-  @Post('chat/conversations/group')
-  async group(@Req() request: Request, @Body() body: DataRecord): Promise<DataRecord> { return success(await this.chat.createGroup(this.userId(request), body.name, body.memberUserIds)); }
-
-  @Get('chat/conversations/:conversationId/messages')
-  async messages(@Req() request: Request, @Param('conversationId') id: string, @Query() query: PageQuery): Promise<DataRecord> { return success(await this.chat.messages(this.userId(request), Number(id), query.afterMessageId, query.beforeMessageId, query.limit)); }
-
-  @Post('chat/conversations/:conversationId/messages')
-  async send(@Req() request: Request, @Param('conversationId') id: string, @Body() body: DataRecord): Promise<DataRecord> { return success(await this.chat.send(this.userId(request), Number(id), body)); }
-
-  @Put('chat/conversations/:conversationId/read')
-  async read(@Req() request: Request, @Param('conversationId') id: string, @Body() body: DataRecord): Promise<DataRecord> { await this.chat.markRead(this.userId(request), Number(id), Number(body.lastReadMessageId)); return success({ ok: true }); }
-
-  @Get('online/list')
-  async online(@Query() query: PageQuery): Promise<DataRecord> {
-    const keyword = String(query.userName ?? '');
-    const keys = await this.redis.keys('login_tokens:*');
-    const rows: DataRecord[] = [];
-    for (const key of keys) {
-      const session = await this.redis.getJson<DataRecord>(key);
-      if (!session || (keyword && !String(session.username ?? '').includes(keyword))) continue;
-      rows.push({ tokenId: key.slice('login_tokens:'.length), userName: session.username, ipaddr: session.ipaddr, loginTime: session.loginTime });
-    }
-    return table(rows, rows.length);
-  }
-
-  @Delete('online/:tokenId')
-  async forceLogout(@Param('tokenId') tokenId: string): Promise<DataRecord> { await this.redis.delete(`login_tokens:${tokenId}`); return success(); }
-
-  @Get('app-update/latest')
-  appUpdate(@Query() query: PageQuery): DataRecord {
-    const platform = String(query.platform ?? '').toLowerCase();
-    const prefix = platform === 'ios' ? 'APP_UPDATE_IOS_' : platform === 'android' ? 'APP_UPDATE_ANDROID_' : 'APP_UPDATE_';
-    const env = (name: string): string => String(process.env[`${prefix}${name}`] ?? process.env[`APP_UPDATE_${name}`] ?? '').trim();
-    const type = ['wgt', 'store'].includes(env('TYPE')) ? env('TYPE') : 'apk';
-    const versionName = env('VERSION_NAME'); const versionCode = Math.max(0, Number(env('VERSION_CODE')) || 0);
-    const downloadUrl = env('PACKAGE_URL') || (type === 'store' ? env('STORE_URL') : ''); const sha256 = env('SHA256').toLowerCase();
-    const configured = Boolean(versionName && downloadUrl && (type === 'store' || /^[a-f0-9]{64}$/.test(sha256)) && (type === 'wgt' || versionCode > 0));
-    const available = type === 'wgt' ? this.compareVersions(versionName, String(query.wgtVersion ?? '0')) > 0 : versionCode > Math.max(0, Number(query.versionCode ?? 0));
-    if (!configured || !available) return success({ available: false, message: configured ? '当前已是最新版本' : '当前暂无可用更新' });
-    return success({ available: true, type, versionName, versionCode, title: env('TITLE') || `养老护理终端 ${versionName}`, description: env('DESCRIPTION').replaceAll('\\n', '\n'), downloadUrl, storeUrl: env('STORE_URL'), size: Number(env('SIZE')) || 0, sha256, mandatory: ['1', 'true', 'yes', 'on'].includes(env('MANDATORY').toLowerCase()), publishedAt: env('PUBLISHED_AT') });
-  }
-
   private numberIds(value: string): number[] { return String(value ?? '').split(',').map(Number).filter((id) => Number.isFinite(id) && id > 0); }
   private userId(request: Request): number { return Number(request.headers.user_id ?? 0); }
   private username(request: Request): string { return decodeURIComponent(String(request.headers.username ?? 'system')); }
-  private compareVersions(left: string, right: string): number {
-    const a = left.split(/[.-]/); const b = right.split(/[.-]/); const length = Math.max(a.length, b.length);
-    for (let index = 0; index < length; index += 1) {
-      const x = a[index] ?? '0'; const y = b[index] ?? '0'; const numeric = /^\d+$/.test(x) && /^\d+$/.test(y);
-      const result = numeric ? Number(x) - Number(y) : x.localeCompare(y, undefined, { sensitivity: 'base' }); if (result) return result;
-    }
-    return 0;
-  }
 
   private async sendWorkbook(response: Response, sheetName: string, columns: string[], rows: DataRecord[]): Promise<void> {
     const workbook = new ExcelJS.Workbook(); const sheet = workbook.addWorksheet(sheetName);

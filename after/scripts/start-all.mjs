@@ -1,7 +1,19 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 
-const projects = ['auth-service', 'system-service', 'codegen-service', 'scheduler-service', 'file-service', 'monitor-service', 'api-gateway'];
+const projects = [
+  'auth-service',
+  'identity-service',
+  'platform-service',
+  'procurement-service',
+  'collaboration-service',
+  'sync-service',
+  'codegen-service',
+  'scheduler-service',
+  'file-service',
+  'monitor-service',
+  'api-gateway',
+];
 const prod = process.argv.includes('--prod');
 const watch = process.argv.includes('--watch');
 const children = projects.map((project) => {

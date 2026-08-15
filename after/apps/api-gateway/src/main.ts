@@ -97,9 +97,35 @@ async function bootstrap(): Promise<void> {
       response.status(503).json({ code: 503, msg: '验证码服务暂不可用' });
     }
   });
+  const systemTargets = {
+    identity: process.env.IDENTITY_SERVICE_URL ?? 'http://127.0.0.1:9201',
+    platform: process.env.PLATFORM_SERVICE_URL ?? 'http://127.0.0.1:9204',
+    procurement: process.env.PROCUREMENT_SERVICE_URL ?? 'http://127.0.0.1:9205',
+    collaboration: process.env.COLLABORATION_SERVICE_URL ?? 'http://127.0.0.1:9206',
+    sync: process.env.SYNC_SERVICE_URL ?? 'http://127.0.0.1:9207',
+  };
+  app.use('/system', createProxyMiddleware({
+    target: systemTargets.identity,
+    router(request) {
+      const path = (request as Request).originalUrl.replace(/^\/system/, '');
+      if (/^\/(config|dict|notice|operlog|logininfor|online|app-update)(\/|$)/.test(path)) return systemTargets.platform;
+      if (path === '/purchase' || path.startsWith('/purchase/')) return systemTargets.procurement;
+      if (path === '/chat' || path.startsWith('/chat/')) return systemTargets.collaboration;
+      if (path === '/sync' || path.startsWith('/sync/')) return systemTargets.sync;
+      return systemTargets.identity;
+    },
+    changeOrigin: true,
+    xfwd: true,
+    proxyTimeout: 30_000,
+    on: {
+      error(error, _request, response) {
+        const outgoing = response as Response;
+        if (!outgoing.headersSent) outgoing.status(503).json({ code: 503, msg: `服务暂不可用: ${error.message}` });
+      },
+    },
+  }));
   const proxies: Array<[string, string]> = [
     ['/auth', process.env.AUTH_SERVICE_URL ?? 'http://127.0.0.1:9200'],
-    ['/system', process.env.SYSTEM_SERVICE_URL ?? 'http://127.0.0.1:9201'],
     ['/code', process.env.GENERATOR_SERVICE_URL ?? 'http://127.0.0.1:9202'],
     ['/schedule', process.env.SCHEDULER_SERVICE_URL ?? 'http://127.0.0.1:9203'],
     ['/file', process.env.FILE_SERVICE_URL ?? 'http://127.0.0.1:9300'],
