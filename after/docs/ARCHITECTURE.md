@@ -1,46 +1,105 @@
 # 架构与命名约定
 
-## 服务命名
+`after/` 采用 NestJS monorepo 组织代码，但运行时不是一个大服务。每个 `apps/*-service` 都可以独立构建、启动和部署，网关只负责认证、权限和路由转发。
 
-目录与运行服务统一采用小写 kebab-case，并以职责结尾：
+## 顶层结构
+
+```text
+after/
+├── apps/                  # 可独立运行的 NestJS 应用
+├── libs/                  # 跨服务共享能力
+├── web-admin/             # Vue 2 管理端
+├── sql/                   # 兼容原系统的数据初始化脚本
+├── docker/                # Compose 与 Nginx 配置
+├── scripts/               # 启动、打包脚本
+├── nest-cli.json
+└── package.json
+```
+
+## 服务边界
 
 | 目录 | 服务名 | 职责 | 端口 |
 |---|---|---|---:|
-| `apps/api-gateway` | `api-gateway` | 统一入口、路由、JWT 与会话校验 | 8080 |
-| `apps/auth-service` | `auth-service` | 身份认证与 token 生命周期 | 9200 |
-| `apps/identity-service` | `identity-service` | 用户、角色、组织、菜单和岗位 | 9201 |
-| `apps/codegen-service` | `codegen-service` | NestJS CRUD 代码生成 | 9202 |
-| `apps/scheduler-service` | `scheduler-service` | Cron 任务和执行日志 | 9203 |
-| `apps/platform-service` | `platform-service` | 参数、字典、通知、审计、在线会话和更新配置 | 9204 |
-| `apps/procurement-service` | `procurement-service` | 供应商和采购订单 | 9205 |
-| `apps/collaboration-service` | `collaboration-service` | 联系人、私聊和群聊 | 9206 |
+| `apps/api-gateway` | `api-gateway` | 统一入口、JWT、Redis session、权限校验、路由转发 | 8080 |
+| `apps/auth-service` | `auth-service` | 登录、刷新 token、退出、注册 | 9200 |
+| `apps/identity-service` | `identity-service` | 用户、角色、部门、菜单、岗位、数据权限 | 9201 |
+| `apps/platform-service` | `platform-service` | 参数、字典、通知、日志、在线会话、App 更新 | 9204 |
+| `apps/procurement-service` | `procurement-service` | 供应商、采购订单 | 9205 |
+| `apps/collaboration-service` | `collaboration-service` | 联系人、私聊、群聊 | 9206 |
 | `apps/sync-service` | `sync-service` | 终端增量同步 | 9207 |
-| `apps/file-service` | `file-service` | 文件存储 | 9300 |
-| `apps/monitor-service` | `monitor-service` | 健康检查和指标 | 9100 |
+| `apps/codegen-service` | `codegen-service` | NestJS CRUD 代码生成 | 9202 |
+| `apps/scheduler-service` | `scheduler-service` | 定时任务和执行日志 | 9203 |
+| `apps/file-service` | `file-service` | 文件上传、下载、删除 | 9300 |
+| `apps/monitor-service` | `monitor-service` | 健康检查和运行指标 | 9100 |
 
-代码文件遵循 NestJS 社区惯例：`*.module.ts`、`*.controller.ts`、`*.service.ts`、`*.dto.ts`。数据库与 Redis 基础设施放入 `libs/common`，运行配置放入 `libs/config`，接口权限、通配权限和验证码放入 `libs/security`，业务代码不反向依赖网关。
+## 服务内部结构
+
+复杂服务采用 feature module 分层，不再把全部接口堆在一个 controller 里。
+
+```text
+apps/identity-service/src/
+├── app.module.ts
+├── main.ts
+├── domain/
+│   ├── identity-domain.module.ts
+│   ├── identity.service.ts
+│   └── resources.ts
+├── modules/
+│   ├── users/
+│   ├── roles/
+│   ├── departments/
+│   ├── menus/
+│   ├── posts/
+│   └── health/
+└── shared/
+    └── http.helpers.ts
+```
+
+```text
+apps/platform-service/src/
+├── app.module.ts
+├── main.ts
+├── domain/
+│   ├── platform-domain.module.ts
+│   └── resources.ts
+├── modules/
+│   ├── config/
+│   ├── dictionary/
+│   ├── notices/
+│   ├── audit/
+│   ├── online-sessions/
+│   ├── app-updates/
+│   └── health/
+└── shared/
+    └── http.helpers.ts
+```
+
+约定：
+
+- `modules/*` 只负责某个业务能力的 Controller 和 Module。
+- `domain/*` 放本服务内可复用的业务 Service、资源定义和领域规则。
+- `shared/*` 放本服务内部共享的请求解析、导出文件等辅助函数。
+- `libs/common` 放 MySQL、Redis、响应模型、通用数据访问。
+- `libs/config` 放运行时配置读取。
+- `libs/security` 放路由权限、验证码和通配权限规则。
 
 ## 请求链路
 
 ```text
 Web / Terminal
-      ↓
-api-gateway (JWT + Redis session + permission)
-      ↓
-auth / identity / platform / procurement / collaboration / sync
-      ↓
-codegen / scheduler / file / monitor
-      ↓
-MySQL / Redis / uploads
+  -> api-gateway
+  -> auth / identity / platform / procurement / collaboration / sync
+  -> codegen / scheduler / file / monitor
+  -> MySQL / Redis / uploads
 ```
 
-外部 API 前缀保留原系统约定，网关转发时移除第一段：
+外部 API 前缀保持兼容，前端不需要跟着服务拆分改接口：
 
 | 外部前缀 | 内部服务 |
 |---|---|
 | `/auth/**` | `auth-service` |
-| `/system/user/**`、`role/**`、`dept/**`、`menu/**`、`post/**` | `identity-service` |
-| `/system/config/**`、`dict/**`、`notice/**`、`operlog/**`、`logininfor/**`、`online/**`、`app-update/**` | `platform-service` |
+| `/system/user/**`, `/system/role/**`, `/system/dept/**`, `/system/menu/**`, `/system/post/**` | `identity-service` |
+| `/system/config/**`, `/system/dict/**`, `/system/notice/**`, `/system/operlog/**`, `/system/logininfor/**`, `/system/online/**`, `/system/app-update/**` | `platform-service` |
 | `/system/purchase/**` | `procurement-service` |
 | `/system/chat/**` | `collaboration-service` |
 | `/system/sync/**` | `sync-service` |
@@ -48,28 +107,15 @@ MySQL / Redis / uploads
 | `/schedule/**` | `scheduler-service` |
 | `/file/**` | `file-service` |
 
-## NestJS 方案替换
+## Java 到 NestJS 的替换关系
 
-- Nacos 服务发现 → Docker DNS + 环境变量路由。
-- Spring Cloud Gateway → NestJS + `http-proxy-middleware`。
-- Spring Security / Redis Token → HS512 JWT + Redis 会话，并保留菜单权限字符和数据范围校验。
-- MyBatis → 参数化 `mysql2` 数据访问层。
-- Quartz → `@nestjs/schedule` + 数据库任务配置。
-- Spring Boot Admin → 独立 Monitor service。
-- Java 代码生成器 → NestJS Controller / Service / DTO / Module 模板。
-- Maven 聚合构建 → Nest CLI monorepo + npm scripts。
+- Spring Cloud Gateway -> NestJS gateway + `http-proxy-middleware`
+- Spring Security / Redis token -> JWT + Redis session + permission policy
+- MyBatis -> `mysql2` 参数化数据访问
+- Quartz -> `@nestjs/schedule` + 数据库任务配置
+- Spring Boot Admin -> 独立 `monitor-service`
+- Maven 聚合构建 -> Nest CLI monorepo + npm scripts
 
-## 边界与数据所有权
+## 当前迁移边界
 
-- 服务按业务能力（bounded context）拆分，不按数据表或 Controller 数量拆分，避免形成大量相互调用的小服务。
-- Gateway 只负责认证、权限和路由，不承载业务逻辑；每个服务独立启动、构建和部署。
-- 当前迁移阶段复用原 MySQL 实例和表结构，但每张业务表只有一个逻辑所属服务。跨域读取暂时保留以兼容原逻辑，后续可逐步改为内部 API 或事件。
-- 外部 `/system/**` 契约不变；服务拆分不会要求管理端同步修改接口地址。
-
-## 数据与安全
-
-- SQL 只通过参数占位符写入值；动态表名和字段名只允许来自代码内白名单。
-- 用户密码继续兼容原 bcrypt 哈希。
-- 生产环境 Redis 不可用时网关拒绝受保护请求。
-- 文件服务拒绝可执行扩展名并验证解析后的绝对路径，防止路径穿越。
-- 定时任务只调用注册过的 NestJS handler，不执行数据库中的任意代码字符串。
+当前阶段复用原 MySQL 实例和表结构，但按服务明确逻辑所有权。后续如果要继续演进，可以把跨服务读写逐步改成内部 API、事件或独立 schema，而不影响现有管理端 API。

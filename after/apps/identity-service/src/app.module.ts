@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
-import { CommonModule } from '@app/common';
-import { IdentityController } from './identity.controller';
-import { PostController } from './post.controller';
-import { IdentityService } from './identity.service';
+import { DepartmentsModule } from './modules/departments/departments.module';
+import { HealthModule } from './modules/health/health.module';
+import { MenusModule } from './modules/menus/menus.module';
+import { PostsModule } from './modules/posts/posts.module';
+import { RolesModule } from './modules/roles/roles.module';
+import { UsersModule } from './modules/users/users.module';
 
 @Module({
-  imports: [CommonModule],
-  controllers: [IdentityController, PostController],
-  providers: [IdentityService],
+  imports: [HealthModule, UsersModule, RolesModule, DepartmentsModule, MenusModule, PostsModule],
 })
 export class IdentityModule {}

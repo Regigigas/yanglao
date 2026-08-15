@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { DatabaseService, affected, success, table, type DataRecord, type PageQuery, type Primitive } from '@app/common';
-import { POST_RESOURCE } from './resources';
+import { POST_RESOURCE } from '../../domain/resources';
 
 @Controller('post')
 export class PostController {
