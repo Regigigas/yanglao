@@ -1,0 +1,62 @@
+{
+  "name": "yanglao-nest-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NestJS microservices backend for the Yanglao management system",
+  "license": "MIT",
+  "scripts": {
+    "build": "nest build api-gateway && nest build auth-service && nest build system-service && nest build codegen-service && nest build scheduler-service && nest build file-service && nest build monitor-service",
+    "build:web": "npm --prefix web-admin run build:prod",
+    "typecheck": "tsc --noEmit",
+    "start": "node scripts/start-all.mjs",
+    "start:dev": "node scripts/start-all.mjs --watch",
+    "start:gateway": "nest start api-gateway --watch",
+    "start:auth": "nest start auth-service --watch",
+    "start:system": "nest start system-service --watch",
+    "start:generator": "nest start codegen-service --watch",
+    "start:scheduler": "nest start scheduler-service --watch",
+    "start:file": "nest start file-service --watch",
+    "start:monitor": "nest start monitor-service --watch",
+    "start:prod": "node scripts/start-all.mjs --prod",
+    "package": "npm run build && node scripts/package.mjs",
+    "docker:build": "docker compose -f docker/docker-compose.yml build",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@nestjs/schedule": "^6.0.0",
+    "bcryptjs": "^3.0.2",
+    "cron": "^4.3.3",
+    "dotenv": "^17.2.2",
+    "exceljs": "^4.4.0",
+    "http-proxy-middleware": "^3.0.5",
+    "ioredis": "^5.8.1",
+    "jsonwebtoken": "^9.0.2",
+    "jszip": "^3.10.1",
+    "multer": "^2.0.2",
+    "mysql2": "^3.14.4",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.10",
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^22.18.3",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "files": ["dist", "scripts/start-all.mjs", ".env.example"],
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.0"
+    }
+  }
+}

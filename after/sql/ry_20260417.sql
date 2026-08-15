@@ -177,9 +177,7 @@ insert into sys_menu values('107',  '通知公告',       '1',   '8', 'notice', 
 insert into sys_menu values('108',  '日志管理',       '1',   '9', 'log',        '',                                  '', '', 1, 0, 'M', '0', '0', '',                        'log',           'admin', sysdate(), '', null, '日志管理菜单');
 insert into sys_menu values('109',  '在线用户',       '2',   '1', 'online',     'monitor/online/index',              '', '', 1, 0, 'C', '0', '0', 'monitor:online:list',     'online',        'admin', sysdate(), '', null, '在线用户菜单');
 insert into sys_menu values('110',  '定时任务',       '2',   '2', 'job',        'monitor/job/index',                 '', '', 1, 0, 'C', '0', '0', 'monitor:job:list',        'job',           'admin', sysdate(), '', null, '定时任务菜单');
-insert into sys_menu values('111',  'Sentinel控制台', '2',   '3', 'http://localhost:8718',        '',                '', '', 0, 0, 'C', '0', '0', 'monitor:sentinel:list',   'sentinel',      'admin', sysdate(), '', null, '流量控制菜单');
-insert into sys_menu values('112',  'Nacos控制台',    '2',   '4', 'http://localhost:8848/nacos',  '',                '', '', 0, 0, 'C', '0', '0', 'monitor:nacos:list',      'nacos',         'admin', sysdate(), '', null, '服务治理菜单');
-insert into sys_menu values('113',  'Admin控制台',    '2',   '5', 'http://localhost:9100/login',  '',                '', '', 0, 0, 'C', '0', '0', 'monitor:server:list',     'server',        'admin', sysdate(), '', null, '服务监控菜单');
+insert into sys_menu values('113',  '服务健康',       '2',   '3', 'http://localhost:9100/health', '',                '', '', 0, 0, 'C', '0', '0', 'monitor:server:list',     'server',        'admin', sysdate(), '', null, 'NestJS服务健康检查');
 insert into sys_menu values('114',  '表单构建',       '3',   '1', 'build',      'tool/build/index',                  '', '', 1, 0, 'C', '0', '0', 'tool:build:list',         'build',         'admin', sysdate(), '', null, '表单构建菜单');
 insert into sys_menu values('115',  '代码生成',       '3',   '2', 'gen',        'tool/gen/index',                    '', '', 1, 0, 'C', '0', '0', 'tool:gen:list',           'code',          'admin', sysdate(), '', null, '代码生成菜单');
 insert into sys_menu values('116',  '系统接口',       '3',   '3', 'http://localhost:8080/swagger-ui/index.html', '', '', '', 0, 0, 'C', '0', '0', 'tool:swagger:list',       'swagger',       'admin', sysdate(), '', null, '系统接口菜单');
@@ -593,9 +591,9 @@ create table sys_job (
   primary key (job_id, job_name, job_group)
 ) engine=innodb auto_increment=100 comment = '定时任务调度表';
 
-insert into sys_job values(1, '系统默认（无参）', 'DEFAULT', 'ryTask.ryNoParams',        '0/10 * * * * ?', '3', '1', '1', 'admin', sysdate(), '', null, '');
-insert into sys_job values(2, '系统默认（有参）', 'DEFAULT', 'ryTask.ryParams(\'ry\')',  '0/15 * * * * ?', '3', '1', '1', 'admin', sysdate(), '', null, '');
-insert into sys_job values(3, '系统默认（多参）', 'DEFAULT', 'ryTask.ryMultipleParams(\'ry\', true, 2000L, 316.50D, 100)',  '0/20 * * * * ?', '3', '1', '1', 'admin', sysdate(), '', null, '');
+insert into sys_job values(1, '服务心跳', 'DEFAULT', 'heartbeat',                  '*/10 * * * * *', '3', '1', '1', 'admin', sysdate(), '', null, 'NestJS健康检查任务');
+insert into sys_job values(2, '参数回显', 'DEFAULT', 'echo(\'nest\')',             '*/15 * * * * *', '3', '1', '1', 'admin', sysdate(), '', null, 'NestJS参数任务');
+insert into sys_job values(3, '参数组合', 'DEFAULT', 'join(\'nest\',\'scheduler\')', '*/20 * * * * *', '3', '1', '1', 'admin', sysdate(), '', null, 'NestJS多参数任务');
 
 
 -- ----------------------------

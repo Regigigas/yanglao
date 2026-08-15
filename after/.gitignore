@@ -5,7 +5,12 @@
 /build/
 !gradle/wrapper/gradle-wrapper.jar
 
-target/
+node_modules/
+dist/
+release/
+uploads/
+.env
+*.tgz
 !.mvn/wrapper/maven-wrapper.jar
 
 ######################################################################

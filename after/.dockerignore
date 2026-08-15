@@ -1,0 +1,10 @@
+node_modules
+dist
+release
+uploads
+web-admin/node_modules
+web-admin/dist
+.git
+.idea
+terminal
+

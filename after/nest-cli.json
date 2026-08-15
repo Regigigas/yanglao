@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "monorepo": true,
+  "root": "apps/api-gateway",
+  "sourceRoot": "apps/api-gateway/src",
+  "compilerOptions": {
+    "webpack": true,
+    "tsConfigPath": "tsconfig.build.json"
+  },
+  "projects": {
+    "api-gateway": { "type": "application", "root": "apps/api-gateway", "entryFile": "main", "sourceRoot": "apps/api-gateway/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "auth-service": { "type": "application", "root": "apps/auth-service", "entryFile": "main", "sourceRoot": "apps/auth-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "system-service": { "type": "application", "root": "apps/system-service", "entryFile": "main", "sourceRoot": "apps/system-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "codegen-service": { "type": "application", "root": "apps/codegen-service", "entryFile": "main", "sourceRoot": "apps/codegen-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "scheduler-service": { "type": "application", "root": "apps/scheduler-service", "entryFile": "main", "sourceRoot": "apps/scheduler-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "file-service": { "type": "application", "root": "apps/file-service", "entryFile": "main", "sourceRoot": "apps/file-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } },
+    "monitor-service": { "type": "application", "root": "apps/monitor-service", "entryFile": "main", "sourceRoot": "apps/monitor-service/src", "compilerOptions": { "tsConfigPath": "tsconfig.build.json" } }
+  }
+}
