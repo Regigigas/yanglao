@@ -104,6 +104,12 @@ export const MENU_CATALOG: MenuCatalogItem[] = [
     icon: 'MedicalFiles',
     group: 'care',
   },
+  {
+    key: 'human-meridian',
+    label: '人体经络与解剖',
+    icon: 'Health',
+    group: 'care',
+  },
 
   {
     key: 'fee',

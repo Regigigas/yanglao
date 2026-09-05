@@ -161,6 +161,16 @@ const routes: RouteRecordRaw[] = [
           menuKey: 'report',
         },
       },
+      {
+        path: 'human-meridian',
+        name: 'HumanMeridian',
+        component: () => import('../views/health/HumanMeridianView.vue'),
+        meta: {
+          title: '人体经络与解剖',
+          icon: 'Health',
+          menuKey: 'human-meridian',
+        },
+      },
       // ── 考勤管理 ──────────────────────────────────
       {
         path: 'clock',
