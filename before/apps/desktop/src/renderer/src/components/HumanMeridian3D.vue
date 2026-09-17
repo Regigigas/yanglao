@@ -17,7 +17,6 @@ interface Props {
   showSkeleton: boolean
   showOrgans: boolean
   showMeridians: boolean
-  flowSpeed: number
   selectedId?: string | null
 }
 
@@ -65,9 +64,6 @@ let skeletonGroup: THREE.Group | undefined;
 let organGroup: THREE.Group | undefined;
 let meridianGroup: THREE.Group | undefined;
 let projectionSurface: THREE.Group | undefined;
-let renderedMeridianId: string | null = null;
-let activeFlowGroup: THREE.Group | undefined;
-let activeFlowMeridianId: string | null = null;
 let bronzeHuman: THREE.Object3D | undefined;
 let selectedObject: THREE.Object3D | null = null;
 const raycaster = new THREE.Raycaster();
@@ -75,7 +71,6 @@ const surfaceProjectionRaycaster = new THREE.Raycaster();
 const visibilityRaycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const interactiveObjects: THREE.Object3D[] = [];
-const flowingParticles: Array<{ mesh: THREE.Mesh; curve: THREE.Curve<THREE.Vector3>; offset: number; meridianId: string }> = [];
 const meridianLines: Array<{
   mesh: THREE.Mesh
   meridianId: string
@@ -101,6 +96,7 @@ const LABEL_SURFACE_OFFSET = 0.02;
 const SURFACE_NORMAL_AXIS = new THREE.Vector3(0, 1, 0);
 const SURFACE_VISIBILITY_TOLERANCE = 0.1;
 const MAX_SURFACE_SAMPLE_STEP = 0.32;
+const ACTIVE_MERIDIAN_COLOR = 0x00e5ff;
 
 const meridians: MeridianDefinition[] = [
   { id: 'ren', name: '任脉', color: 0xffd166, paths: [[[0, -0.72, 0.62], [0, -0.4, 0.88], [0, 0.7, 0.92], [0, 1.8, 0.83], [0, 2.55, 0.56], [0, 3.0, 0.51]]] },
@@ -134,6 +130,23 @@ const meridianAcupoints: Record<string, string[]> = {
   liver: ['大敦', '行间', '太冲', '曲泉', '期门'],
   ren: ['中极', '关元', '气海', '神阙', '膻中', '承浆'],
   du: ['长强', '命门', '大椎', '百会', '水沟'],
+};
+
+const meridianDisplayNames: Record<string, string> = {
+  lung: '手太阴肺经（肺经 · LU）',
+  'large-intestine': '手阳明大肠经（大肠经 · LI）',
+  stomach: '足阳明胃经（胃经 · ST）',
+  spleen: '足太阴脾经（脾经 · SP）',
+  heart: '手少阴心经（心经 · HT）',
+  'small-intestine': '手太阳小肠经（小肠经 · SI）',
+  bladder: '足太阳膀胱经（膀胱经 · BL）',
+  kidney: '足少阴肾经（肾经 · KI）',
+  pericardium: '手厥阴心包经（心包经 · PC）',
+  'triple-burner': '手少阳三焦经（三焦经 · SJ）',
+  gallbladder: '足少阳胆经（胆经 · GB）',
+  liver: '足厥阴肝经（肝经 · LR）',
+  ren: '任脉（CV）',
+  du: '督脉（GV）',
 };
 
 function material(color: number, opacity = 1): THREE.MeshStandardMaterial {
@@ -271,15 +284,13 @@ function loadBronzeHuman(target: THREE.Group): void {
     model.position.set(-center.x, -0.25 - center.y, -center.z);
     updateSkinnedMeshSkeletons(model);
     model.name = '仿真针灸经络铜人';
-    const bronzeMaterial = new THREE.MeshPhysicalMaterial({
+    // 保留铜人金属观感，同时减少高开销的清漆材质计算。
+    const bronzeMaterial = new THREE.MeshStandardMaterial({
       color: 0xbc7a38,
       emissive: 0x241004,
       emissiveIntensity: 0.18,
       metalness: 0.54,
       roughness: 0.38,
-      clearcoat: 0.3,
-      clearcoatRoughness: 0.42,
-      envMapIntensity: 1.25,
     });
     model.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
@@ -293,7 +304,7 @@ function loadBronzeHuman(target: THREE.Group): void {
     bronzeHuman = model;
     target.updateMatrixWorld(true);
     try {
-      rebuildSurfaceMeridians(props.selectedId ?? null);
+      buildStaticMeridians();
     } catch (error) {
       surfaceFitError.value = true;
       console.error('[HumanMeridian3D] 经络贴肤计算失败，已保留基础经络', error);
@@ -308,13 +319,10 @@ function loadBronzeHuman(target: THREE.Group): void {
       scene.remove(meridianGroup);
       meridianCurvePaths.length = 0;
       meridianCurves.clear();
-      const meridianId = meridians.some(item => item.id === props.selectedId) ? props.selectedId : null;
-      meridianGroup = meridianId ? createMeridians(undefined, meridianId) : new THREE.Group();
-      renderedMeridianId = meridianId;
+      meridianGroup = createMeridians();
       meridianGroup.visible = props.showMeridians;
       scene.add(meridianGroup);
       createMeridianLabels(props.selectedId ?? null);
-      syncActiveFlowParticles(props.selectedId ?? null);
       highlightSelection(props.selectedId ?? null);
     }
     console.error('[HumanMeridian3D] 铜人人体模型加载失败，已使用简化模型', error);
@@ -723,51 +731,6 @@ function createMeridians(surface?: THREE.Object3D, onlyMeridianId?: string | nul
   return group;
 }
 
-function clearActiveFlowParticles(): void {
-  if (activeFlowGroup) {
-    activeFlowGroup.parent?.remove(activeFlowGroup);
-    disposeObject(activeFlowGroup);
-  }
-  activeFlowGroup = undefined;
-  activeFlowMeridianId = null;
-  flowingParticles.length = 0;
-}
-
-function syncActiveFlowParticles(id: string | null): void {
-  const definition = meridians.find(item => item.id === id);
-  const shouldRender = Boolean(props.showMeridians && meridianGroup && definition);
-  if (!shouldRender) {
-    clearActiveFlowParticles();
-    return;
-  }
-  if (activeFlowGroup && activeFlowMeridianId === id) return;
-  clearActiveFlowParticles();
-  const group = new THREE.Group();
-  const geometry = new THREE.SphereGeometry(0.032, 8, 6);
-  const particleMaterial = new THREE.MeshBasicMaterial({
-    color: definition?.color ?? 0xffdf72,
-    transparent: true,
-    opacity: 0.98,
-    depthTest: true,
-  });
-  meridianCurvePaths.filter(item => item.meridianId === id).forEach(({ curve }, pathIndex) => {
-    for (let index = 0; index < 2; index += 1) {
-      const particle = new THREE.Mesh(geometry, particleMaterial);
-      particle.renderOrder = 8;
-      group.add(particle);
-      flowingParticles.push({
-        mesh: particle,
-        curve,
-        offset: (index / 2 + pathIndex * 0.17) % 1,
-        meridianId: id as string,
-      });
-    }
-  });
-  activeFlowGroup = group;
-  activeFlowMeridianId = id;
-  meridianGroup?.add(group);
-}
-
 function removeMeridianLabels(): void {
   meridianLabels.forEach(({ element }) => element.remove());
   meridianLabels.clear();
@@ -776,7 +739,7 @@ function removeMeridianLabels(): void {
   renderedLabelMeridianId = null;
 }
 
-function rebuildSurfaceMeridians(id: string | null): void {
+function buildStaticMeridians(): void {
   if (!scene || !bronzeHuman) return;
   selectedObject = null;
   if (meridianGroup) {
@@ -786,23 +749,18 @@ function rebuildSurfaceMeridians(id: string | null): void {
   for (let index = interactiveObjects.length - 1; index >= 0; index -= 1) {
     if (interactiveObjects[index].userData.selection?.kind === 'meridian') interactiveObjects.splice(index, 1);
   }
-  flowingParticles.length = 0;
   meridianLines.length = 0;
   acupointMarkers.length = 0;
   meridianCurves.clear();
   meridianCurvePaths.length = 0;
-  activeFlowGroup = undefined;
-  activeFlowMeridianId = null;
   removeMeridianLabels();
   projectionSurface ??= createStaticProjectionSurface(bronzeHuman);
-  const meridianId = meridians.some(item => item.id === id) ? id : null;
-  meridianGroup = meridianId ? createMeridians(bronzeHuman, meridianId) : new THREE.Group();
-  renderedMeridianId = meridianId;
+  // 经络位置不会随交互改变；在模型加载后一次贴肤并缓存全部路径。
+  meridianGroup = createMeridians(bronzeHuman);
   meridianGroup.visible = props.showMeridians;
   scene.add(meridianGroup);
-  createMeridianLabels(meridianId);
-  syncActiveFlowParticles(meridianId);
-  highlightSelection(id);
+  createMeridianLabels(props.selectedId ?? null);
+  highlightSelection(props.selectedId ?? null);
 }
 
 function createMeridianLabels(id: string | null): void {
@@ -817,7 +775,7 @@ function createMeridianLabels(id: string | null): void {
   const element = document.createElement('button');
   element.type = 'button';
   element.className = 'meridian-label';
-  element.textContent = definition.name;
+  element.textContent = meridianDisplayNames[definition.id] ?? definition.name;
   element.style.setProperty('--meridian-color', `#${definition.color.toString(16).padStart(6, '0')}`);
   element.title = `点击查看${definition.name}详细介绍`;
   element.addEventListener('pointerdown', event => event.stopPropagation());
@@ -958,13 +916,12 @@ function createScene(): void {
     camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
     camera.position.set(0, 0.2, 11.5);
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.35));
+    renderer.setPixelRatio(1);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = false;
     container.value.appendChild(renderer.domElement);
     controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
+    controls.enableDamping = false;
     controls.minDistance = 6;
     controls.maxDistance = 18;
     controls.target.set(0, -0.25, 0);
@@ -1006,7 +963,6 @@ function syncVisibility(): void {
   syncAnatomyLayer('organs', props.showOrgans);
   if (meridianGroup) meridianGroup.visible = props.showMeridians;
   updateBronzeMaterial();
-  syncActiveFlowParticles(props.selectedId ?? null);
   highlightSelection(props.selectedId ?? null);
   requestRender();
 }
@@ -1020,7 +976,6 @@ function highlightSelection(id: string | null): void {
   selectedObject = null;
   const isMeridianSelection = meridians.some(item => item.id === id);
   createMeridianLabels(isMeridianSelection ? id : null);
-  syncActiveFlowParticles(isMeridianSelection ? id : null);
   requestRender();
   acupointMarkers.forEach(({ mesh, meridianId, normal }) => {
     const isSelected = meridianId === id;
@@ -1034,7 +989,7 @@ function highlightSelection(id: string | null): void {
     const isSelected = meridianId === id;
     mesh.visible = isSelected && isSurfacePointVisible(anchor, normal);
     const lineMaterial = mesh.material as THREE.MeshBasicMaterial;
-    lineMaterial.color.setHex(isSelected ? 0xffe08a : color);
+    lineMaterial.color.setHex(isSelected ? ACTIVE_MERIDIAN_COLOR : color);
     lineMaterial.opacity = isSelected ? 0.96 : 0.2;
     mesh.scale.setScalar(1);
   });
@@ -1075,24 +1030,10 @@ function requestRender(): void {
 
 function animate(now = performance.now()): void {
   animationFrame = window.requestAnimationFrame(animate);
-  if (now - lastRenderedAt < 33) return;
-  const shouldAnimateFlow = props.showMeridians && flowingParticles.length > 0;
+  if (now - lastRenderedAt < 16) return;
   const controlsChanged = controls?.update() ?? false;
-  if (!needsRender && !shouldAnimateFlow && !controlsChanged) return;
+  if (!needsRender && !controlsChanged) return;
   lastRenderedAt = now;
-  if (shouldAnimateFlow) {
-    const time = now * 0.00012 * props.flowSpeed;
-    flowingParticles.forEach((particle) => {
-      const progress = (time + particle.offset) % 1;
-      const projection = getCurveSurfaceProjection(particle.curve, progress);
-      particle.mesh.position.copy(projection.point);
-      particle.mesh.visible = particle.meridianId === props.selectedId
-        && projection.isValid !== false
-        && isSurfaceNormalFacingCamera(projection.point, projection.normal);
-      const pulse = 0.82 + Math.sin((time + particle.offset) * Math.PI * 10) * 0.18;
-      particle.mesh.scale.setScalar(pulse);
-    });
-  }
   acupointMarkers.forEach(({ mesh, meridianId, normal }) => {
     mesh.visible = meridianId === props.selectedId && isSurfacePointVisible(mesh.position, normal);
   });
@@ -1136,9 +1077,8 @@ function disposeObject(root: THREE.Object3D): void {
 watch(() => [props.showSkin, props.showMuscles, props.showSkeleton, props.showOrgans, props.showMeridians], syncVisibility);
 watch(() => props.selectedId, (id) => {
   const selectedId = id ?? null;
-  const meridianId = meridians.some(item => item.id === selectedId) ? selectedId : null;
-  if (bronzeHuman && meridianId !== renderedMeridianId) rebuildSurfaceMeridians(selectedId);
-  else highlightSelection(selectedId);
+  // 所有经络均已固定生成，选中项只更新显示状态，避免重复贴肤计算。
+  highlightSelection(selectedId);
 });
 onMounted(createScene);
 onBeforeUnmount(() => {
@@ -1157,7 +1097,6 @@ onBeforeUnmount(() => {
   acupointLabels.forEach(({ element }) => element.remove());
   acupointLabels.clear();
   interactiveObjects.length = 0;
-  flowingParticles.length = 0;
   meridianLines.length = 0;
   acupointMarkers.length = 0;
 });

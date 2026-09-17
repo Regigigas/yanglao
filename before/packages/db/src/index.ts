@@ -27,6 +27,8 @@ import { OperationsRepo } from './repositories/operations.repo';
 import { SupplierRepo } from './repositories/supplier.repo';
 import { PurchaseOrderRepo } from './repositories/purchase-order.repo';
 import { ChatRepo } from './repositories/chat.repo';
+import { WasteRecyclingRepo } from './repositories/waste-recycling.repo';
+import { AssistedServicesRepo } from './repositories/assisted-services.repo';
 
 export * from './schema';
 export * from './migrations/index';
@@ -54,6 +56,21 @@ export { OperationsRepo } from './repositories/operations.repo';
 export { SupplierRepo } from './repositories/supplier.repo';
 export { PurchaseOrderRepo } from './repositories/purchase-order.repo';
 export { ChatRepo } from './repositories/chat.repo';
+export { WasteRecyclingRepo } from './repositories/waste-recycling.repo';
+export { AssistedServicesRepo } from './repositories/assisted-services.repo';
+export type {
+  WasteOrderQuery,
+  WasteSettlementInput,
+  WasteWeighItemInput,
+} from './repositories/waste-recycling.repo';
+export type {
+  MedicalReferralQuery,
+  NewMedicalReferral,
+  NewProxyPurchaseItem,
+  NewProxyPurchaseOrder,
+  ProxyPurchaseQuery,
+  ReferralCompletionInput,
+} from './repositories/assisted-services.repo';
 export { hashPassword, verifyPassword } from './utils/password';
 
 let _db: DatabaseInstance | null = null;
@@ -111,6 +128,8 @@ export function createRepos(db: DatabaseInstance = getDatabase()) {
     supplier: new SupplierRepo(db),
     purchaseOrder: new PurchaseOrderRepo(db),
     chat: new ChatRepo(db),
+    wasteRecycling: new WasteRecyclingRepo(db),
+    assistedServices: new AssistedServicesRepo(db),
   };
 }
 

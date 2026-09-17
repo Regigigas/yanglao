@@ -117,6 +117,17 @@ const routes: RouteRecordRaw[] = [
           menuKey: 'nutrition',
         },
       },
+      // ── 食补 ──────────────────────────────────────
+      {
+        path: 'food-therapy',
+        name: 'FoodTherapy',
+        component: () => import('../views/food-therapy/FoodTherapyView.vue'),
+        meta: {
+          title: '食补',
+          icon: 'Nutrition',
+          menuKey: 'food-therapy',
+        },
+      },
       // ── 活动管理 ──────────────────────────────────
       {
         path: 'activity',
@@ -169,6 +180,26 @@ const routes: RouteRecordRaw[] = [
           title: '人体经络与解剖',
           icon: 'Health',
           menuKey: 'human-meridian',
+        },
+      },
+      {
+        path: 'waste-recycling',
+        name: 'WasteRecycling',
+        component: () => import('../views/waste-recycling/WasteRecyclingView.vue'),
+        meta: {
+          title: '废品回收',
+          icon: 'Refresh',
+          menuKey: 'waste-recycling',
+        },
+      },
+      {
+        path: 'assisted-services',
+        name: 'AssistedServices',
+        component: () => import('../views/assisted-services/AssistedServicesView.vue'),
+        meta: {
+          title: '代办与医养协作',
+          icon: 'MedicalFiles',
+          menuKey: 'assisted-services',
         },
       },
       // ── 考勤管理 ──────────────────────────────────

@@ -1103,6 +1103,318 @@ export interface PurchaseOrderItemRow {
   updated_at: number;
 }
 
+// ─── 废品回收 ─────────────────────────────────────────────────
+
+export type WasteOrderStatus =
+  | 'pending'
+  | 'assigned'
+  | 'collecting'
+  | 'weighed'
+  | 'settled'
+  | 'completed'
+  | 'cancelled';
+
+export interface WasteCategoryRow {
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+  guide_price_cents: number;
+  points_per_unit: number;
+  status: 'active' | 'inactive';
+  sort_order: number;
+  remark: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+export interface WasteRecyclingOrderRow {
+  id: string;
+  order_no: string;
+  source_type: 'elderly' | 'staff' | 'community' | 'other';
+  elderly_id: string | null;
+  contact_name: string;
+  contact_phone: string | null;
+  pickup_type: 'pickup' | 'dropoff';
+  pickup_address: string | null;
+  appointment_at: string;
+  estimated_weight: number | null;
+  total_weight: number;
+  total_amount_cents: number;
+  points: number;
+  status: WasteOrderStatus;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  assigned_at: number | null;
+  collected_at: number | null;
+  weighed_at: number | null;
+  settled_at: number | null;
+  completed_at: number | null;
+  cancel_reason: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  remark: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+export interface WasteRecyclingItemRow {
+  id: string;
+  order_id: string;
+  category_id: string;
+  category_name: string;
+  material_name: string;
+  unit: string;
+  gross_weight: number;
+  tare_weight: number;
+  net_weight: number;
+  unit_price_cents: number;
+  amount_cents: number;
+  quality_grade: 'excellent' | 'normal' | 'mixed';
+  remark: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface WasteSettlementRow {
+  id: string;
+  settlement_no: string;
+  order_id: string;
+  method: 'cash' | 'bank' | 'points' | 'donation';
+  cash_amount_cents: number;
+  points: number;
+  payee: string | null;
+  operator: string | null;
+  settled_at: number;
+  remark: string | null;
+  created_at: number;
+}
+
+export interface WastePointsLedgerRow {
+  id: string;
+  elderly_id: string;
+  order_id: string | null;
+  change_points: number;
+  reason: string;
+  operator: string | null;
+  occurred_at: number;
+  created_at: number;
+}
+
+export interface WasteInventoryLotRow {
+  id: string;
+  order_id: string;
+  item_id: string;
+  category_id: string;
+  material_name: string;
+  unit: string;
+  quantity: number;
+  remaining_quantity: number;
+  cost_amount_cents: number;
+  storage_location: string | null;
+  status: 'in_stock' | 'partial' | 'out';
+  created_at: number;
+  updated_at: number;
+}
+
+export interface WasteInventoryTransactionRow {
+  id: string;
+  lot_id: string;
+  transaction_type: 'in' | 'out' | 'adjust';
+  quantity: number;
+  destination: string | null;
+  counterparty: string | null;
+  unit_price_cents: number;
+  amount_cents: number;
+  operator: string | null;
+  occurred_at: string;
+  remark: string | null;
+  created_at: number;
+}
+
+export interface WasteRecyclingStats {
+  total_orders: number;
+  pending_orders: number;
+  completed_orders: number;
+  total_weight: number;
+  total_amount_cents: number;
+  total_points: number;
+  inventory_weight: number;
+  by_category: Array<{ category_name: string; weight: number; amount_cents: number }>;
+  monthly_trend: Array<{ month: string; orders: number; weight: number; amount_cents: number }>;
+}
+
+// ─── 代办服务与医养协作 ─────────────────────────────────────────
+
+export type ProxyPurchaseCategory = 'takeaway' | 'medicine' | 'daily_goods' | 'package_pickup' | 'errand' | 'other';
+export type ProxyPurchaseStatus = 'pending' | 'assigned' | 'purchasing' | 'delivering' | 'delivered' | 'settled' | 'cancelled';
+
+export interface AssistedServiceCatalogRow {
+  id: string;
+  code: string;
+  name: string;
+  category: ProxyPurchaseCategory;
+  charge_mode: 'free' | 'fixed' | 'custom';
+  default_service_fee_cents: number;
+  status: 'active' | 'inactive';
+  sort_order: number;
+  remark: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+export interface ProxyPurchaseOrderRow {
+  id: string;
+  order_no: string;
+  elderly_id: string;
+  service_catalog_id: string | null;
+  category: ProxyPurchaseCategory;
+  charge_mode: 'free' | 'fixed' | 'custom';
+  requester_name: string;
+  requester_phone: string | null;
+  merchant_name: string | null;
+  delivery_address: string;
+  expected_at: string | null;
+  goods_amount_cents: number;
+  delivery_fee_cents: number;
+  service_fee_cents: number;
+  total_amount_cents: number;
+  advance_amount_cents: number;
+  prescription_required: 0 | 1;
+  prescription_no: string | null;
+  prescription_verified_by: string | null;
+  prescription_verified_at: number | null;
+  status: ProxyPurchaseStatus;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  assigned_at: number | null;
+  purchased_at: number | null;
+  delivery_started_at: number | null;
+  delivered_at: number | null;
+  signed_by: string | null;
+  signed_at: number | null;
+  settlement_method: 'cash' | 'wechat' | 'alipay' | 'bank' | 'monthly_bill' | 'other' | null;
+  settlement_status: 'unsettled' | 'paid' | 'monthly_bill';
+  bill_id: string | null;
+  settled_at: number | null;
+  cancel_reason: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  remark: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+export interface ProxyPurchaseItemRow {
+  id: string;
+  order_id: string;
+  item_name: string;
+  specification: string | null;
+  quantity: number;
+  unit: string;
+  unit_price_cents: number;
+  amount_cents: number;
+  medicine_type: 'otc' | 'prescription' | null;
+  dosage: string | null;
+  remark: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface MedicalPartnerRow {
+  id: string;
+  name: string;
+  partner_type: 'clinic' | 'hospital' | 'pharmacy' | 'rehab' | 'laboratory' | 'other';
+  hospital_level: string | null;
+  specialties: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  address: string | null;
+  emergency_channel: string | null;
+  agreement_no: string | null;
+  agreement_start: string | null;
+  agreement_end: string | null;
+  settlement_cycle: string | null;
+  status: 'active' | 'inactive';
+  remark: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+export type MedicalReferralStatus = 'pending' | 'confirmed' | 'departed' | 'in_consultation' | 'completed' | 'follow_up' | 'cancelled';
+
+export interface MedicalReferralRow {
+  id: string;
+  referral_no: string;
+  elderly_id: string;
+  partner_id: string;
+  partner_name: string;
+  service_type: 'consultation' | 'referral' | 'escort' | 'exam' | 'rehab' | 'medicine_delivery' | 'emergency';
+  priority: 'normal' | 'urgent' | 'emergency';
+  appointment_at: string;
+  department: string | null;
+  doctor: string | null;
+  reason: string;
+  symptoms: string | null;
+  escort_required: 0 | 1;
+  escort_user_id: string | null;
+  escort_user_name: string | null;
+  status: MedicalReferralStatus;
+  partner_confirmed_at: number | null;
+  departed_at: number | null;
+  consultation_started_at: number | null;
+  completed_at: number | null;
+  diagnosis: string | null;
+  treatment_plan: string | null;
+  prescription: string | null;
+  next_visit_at: string | null;
+  medical_fee_cents: number;
+  transport_fee_cents: number;
+  service_fee_cents: number;
+  total_amount_cents: number;
+  settlement_status: 'unpaid' | 'paid' | 'monthly_bill';
+  bill_id: string | null;
+  cancel_reason: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  remark: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+export interface MedicalFollowUpRow {
+  id: string;
+  referral_id: string;
+  elderly_id: string;
+  follow_up_at: string;
+  method: 'phone' | 'visit' | 'online';
+  condition: string;
+  medication_compliance: string | null;
+  adverse_reaction: string | null;
+  next_action: string | null;
+  next_follow_up_at: string | null;
+  staff_id: string | null;
+  staff_name: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AssistedServiceStats {
+  purchase_total: number;
+  purchase_pending: number;
+  purchase_month_amount_cents: number;
+  referral_total: number;
+  referral_pending: number;
+  referral_follow_up: number;
+  active_partners: number;
+}
+
 // ─── 运营与安全闭环 ─────────────────────────────────────────────
 
 export interface CareHandoverRow {

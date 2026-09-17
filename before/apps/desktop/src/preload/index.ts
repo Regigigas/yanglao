@@ -623,6 +623,86 @@ const api = {
     },
   },
 
+  // ── 废品回收 ─────────────────────────────────────────────────
+  wasteRecycling: {
+    category: {
+      list: (activeOnly?: boolean) => ipcRenderer.invoke('waste:category:list', activeOnly),
+      create: (data: unknown) => ipcRenderer.invoke('waste:category:create', data),
+      update: (id: string, data: unknown) => ipcRenderer.invoke('waste:category:update', { id, data }),
+      delete: (id: string) => ipcRenderer.invoke('waste:category:delete', id),
+    },
+    order: {
+      list: (query?: unknown) => ipcRenderer.invoke('waste:order:list', query),
+      get: (id: string) => ipcRenderer.invoke('waste:order:get', id),
+      items: (id: string) => ipcRenderer.invoke('waste:order:items', id),
+      create: (data: unknown) => ipcRenderer.invoke('waste:order:create', data),
+      assign: (id: string, assigneeId: string, assigneeName: string) =>
+        ipcRenderer.invoke('waste:order:assign', { id, assigneeId, assigneeName }),
+      start: (id: string) => ipcRenderer.invoke('waste:order:start', id),
+      weigh: (id: string, items: unknown[]) => ipcRenderer.invoke('waste:order:weigh', { id, items }),
+      settle: (id: string, data: unknown) => ipcRenderer.invoke('waste:order:settle', { id, data }),
+      complete: (id: string) => ipcRenderer.invoke('waste:order:complete', id),
+      cancel: (id: string, reason: string) => ipcRenderer.invoke('waste:order:cancel', { id, reason }),
+    },
+    settlement: {
+      get: (orderId: string) => ipcRenderer.invoke('waste:settlement:get', orderId),
+    },
+    points: {
+      list: (elderlyId?: string) => ipcRenderer.invoke('waste:points:list', elderlyId),
+      balance: (elderlyId: string) => ipcRenderer.invoke('waste:points:balance', elderlyId),
+    },
+    inventory: {
+      list: (status?: string) => ipcRenderer.invoke('waste:inventory:list', status),
+      transactions: (lotId: string) => ipcRenderer.invoke('waste:inventory:transactions', lotId),
+      transact: (lotId: string, data: unknown) => ipcRenderer.invoke('waste:inventory:transact', { lotId, data }),
+    },
+    stats: (startDate?: string, endDate?: string) => ipcRenderer.invoke('waste:stats', { startDate, endDate }),
+  },
+
+  // ── 代办与医养协作 ───────────────────────────────────────────
+  assistedServices: {
+    catalog: {
+      list: (activeOnly?: boolean) => ipcRenderer.invoke('assisted:catalog:list', activeOnly),
+      create: (data: unknown) => ipcRenderer.invoke('assisted:catalog:create', data),
+      update: (id: string, data: unknown) => ipcRenderer.invoke('assisted:catalog:update', { id, data }),
+    },
+    purchase: {
+      list: (query?: unknown) => ipcRenderer.invoke('assisted:purchase:list', query),
+      get: (id: string) => ipcRenderer.invoke('assisted:purchase:get', id),
+      items: (id: string) => ipcRenderer.invoke('assisted:purchase:items', id),
+      create: (order: unknown, items: unknown[]) => ipcRenderer.invoke('assisted:purchase:create', { order, items }),
+      assign: (id: string, assigneeId: string, assigneeName: string) =>
+        ipcRenderer.invoke('assisted:purchase:assign', { id, assigneeId, assigneeName }),
+      verifyPrescription: (id: string, prescriptionNo: string, verifier: string) =>
+        ipcRenderer.invoke('assisted:purchase:verify-prescription', { id, prescriptionNo, verifier }),
+      start: (id: string) => ipcRenderer.invoke('assisted:purchase:start', id),
+      deliver: (id: string) => ipcRenderer.invoke('assisted:purchase:deliver', id),
+      sign: (id: string, signedBy: string) => ipcRenderer.invoke('assisted:purchase:sign', { id, signedBy }),
+      settle: (id: string, method: string) => ipcRenderer.invoke('assisted:purchase:settle', { id, method }),
+      cancel: (id: string, reason: string) => ipcRenderer.invoke('assisted:purchase:cancel', { id, reason }),
+    },
+    partner: {
+      list: (activeOnly?: boolean) => ipcRenderer.invoke('assisted:partner:list', activeOnly),
+      create: (data: unknown) => ipcRenderer.invoke('assisted:partner:create', data),
+      update: (id: string, data: unknown) => ipcRenderer.invoke('assisted:partner:update', { id, data }),
+    },
+    referral: {
+      list: (query?: unknown) => ipcRenderer.invoke('assisted:referral:list', query),
+      get: (id: string) => ipcRenderer.invoke('assisted:referral:get', id),
+      create: (data: unknown) => ipcRenderer.invoke('assisted:referral:create', data),
+      confirm: (id: string) => ipcRenderer.invoke('assisted:referral:confirm', id),
+      depart: (id: string) => ipcRenderer.invoke('assisted:referral:depart', id),
+      consult: (id: string) => ipcRenderer.invoke('assisted:referral:consult', id),
+      complete: (id: string, data: unknown) => ipcRenderer.invoke('assisted:referral:complete', { id, data }),
+      cancel: (id: string, reason: string) => ipcRenderer.invoke('assisted:referral:cancel', { id, reason }),
+    },
+    followUp: {
+      list: (referralId?: string) => ipcRenderer.invoke('assisted:follow-up:list', referralId),
+      create: (data: unknown) => ipcRenderer.invoke('assisted:follow-up:create', data),
+    },
+    stats: () => ipcRenderer.invoke('assisted:stats'),
+  },
+
   // ── 数据库文件路径配置 ─────────────────────────────────────────
   db: {
     getPath: (): Promise<{

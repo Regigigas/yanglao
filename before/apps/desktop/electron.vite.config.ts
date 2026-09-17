@@ -19,6 +19,10 @@ export default defineConfig({
     resolve: {
       alias: {
         '@main': resolve('src/main'),
+        '@yanglao/core': resolve('../../packages/core/src/index.ts'),
+        '@yanglao/db': resolve('../../packages/db/src/index.ts'),
+        '@yanglao/sync': resolve('../../packages/sync/src/index.ts'),
+        '@yanglao/ui': resolve('../../packages/ui/src/index.ts'),
       },
     },
     build: {
@@ -36,6 +40,14 @@ export default defineConfig({
         exclude: ['@yanglao/db', '@yanglao/sync', '@yanglao/core', '@yanglao/ui'],
       }),
     ],
+    resolve: {
+      alias: {
+        '@yanglao/core': resolve('../../packages/core/src/index.ts'),
+        '@yanglao/db': resolve('../../packages/db/src/index.ts'),
+        '@yanglao/sync': resolve('../../packages/sync/src/index.ts'),
+        '@yanglao/ui': resolve('../../packages/ui/src/index.ts'),
+      },
+    },
   },
 
   // ── 渲染进程（Vue）───────────────────────────────────────
@@ -46,6 +58,10 @@ export default defineConfig({
         '@': resolve('src/renderer/src'),
         '@ui': resolve('../../packages/ui/src'),
         '@core': resolve('../../packages/core/src'),
+        '@yanglao/core': resolve('../../packages/core/src/index.ts'),
+        '@yanglao/db': resolve('../../packages/db/src/index.ts'),
+        '@yanglao/sync': resolve('../../packages/sync/src/index.ts'),
+        '@yanglao/ui': resolve('../../packages/ui/src/index.ts'),
       },
     },
     // dev 模式下 esbuild 预优化也需要排除 oxc-parser 的平台原生/WASM 绑定

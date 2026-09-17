@@ -1539,7 +1539,247 @@ const migrations = [
   { version: 36, description: "发票增加申请人并支持待处理状态", up: (db2) => {
     const columns = db2.prepare(`PRAGMA table_info(invoice)`).all();
     if (!columns.some((column) => column.name === "applicant")) db2.exec(`ALTER TABLE invoice ADD COLUMN applicant TEXT;`);
-  } }
+  } },
+  {
+    version: 37,
+    description: "创建废品回收全流程、结算积分与库存台账",
+    up: (db2) => {
+      db2.exec(`
+        CREATE TABLE IF NOT EXISTS waste_category (
+          id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'kg',
+          guide_price_cents INTEGER NOT NULL DEFAULT 0, points_per_unit INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'active', sort_order INTEGER NOT NULL DEFAULT 0, remark TEXT,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_recycling_order (
+          id TEXT PRIMARY KEY, order_no TEXT NOT NULL UNIQUE, source_type TEXT NOT NULL DEFAULT 'other',
+          elderly_id TEXT, contact_name TEXT NOT NULL, contact_phone TEXT, pickup_type TEXT NOT NULL DEFAULT 'pickup',
+          pickup_address TEXT, appointment_at TEXT NOT NULL, estimated_weight REAL, total_weight REAL NOT NULL DEFAULT 0,
+          total_amount_cents INTEGER NOT NULL DEFAULT 0, points INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending', assignee_id TEXT, assignee_name TEXT, assigned_at INTEGER,
+          collected_at INTEGER, weighed_at INTEGER, settled_at INTEGER, completed_at INTEGER, cancel_reason TEXT,
+          created_by TEXT, created_by_name TEXT, remark TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_recycling_item (
+          id TEXT PRIMARY KEY, order_id TEXT NOT NULL, category_id TEXT NOT NULL, category_name TEXT NOT NULL,
+          material_name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'kg', gross_weight REAL NOT NULL DEFAULT 0,
+          tare_weight REAL NOT NULL DEFAULT 0, net_weight REAL NOT NULL DEFAULT 0,
+          unit_price_cents INTEGER NOT NULL DEFAULT 0, amount_cents INTEGER NOT NULL DEFAULT 0,
+          quality_grade TEXT NOT NULL DEFAULT 'normal', remark TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_settlement (
+          id TEXT PRIMARY KEY, settlement_no TEXT NOT NULL UNIQUE, order_id TEXT NOT NULL UNIQUE,
+          method TEXT NOT NULL, cash_amount_cents INTEGER NOT NULL DEFAULT 0, points INTEGER NOT NULL DEFAULT 0,
+          payee TEXT, operator TEXT, settled_at INTEGER NOT NULL, remark TEXT, created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_points_ledger (
+          id TEXT PRIMARY KEY, elderly_id TEXT NOT NULL, order_id TEXT, change_points INTEGER NOT NULL,
+          reason TEXT NOT NULL, operator TEXT, occurred_at INTEGER NOT NULL, created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_inventory_lot (
+          id TEXT PRIMARY KEY, order_id TEXT NOT NULL, item_id TEXT NOT NULL UNIQUE, category_id TEXT NOT NULL,
+          material_name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'kg', quantity REAL NOT NULL,
+          remaining_quantity REAL NOT NULL, cost_amount_cents INTEGER NOT NULL DEFAULT 0, storage_location TEXT,
+          status TEXT NOT NULL DEFAULT 'in_stock', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_inventory_transaction (
+          id TEXT PRIMARY KEY, lot_id TEXT NOT NULL, transaction_type TEXT NOT NULL, quantity REAL NOT NULL,
+          destination TEXT, counterparty TEXT, unit_price_cents INTEGER NOT NULL DEFAULT 0,
+          amount_cents INTEGER NOT NULL DEFAULT 0, operator TEXT, occurred_at TEXT NOT NULL,
+          remark TEXT, created_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_waste_category_status ON waste_category(status, sort_order);
+        CREATE INDEX IF NOT EXISTS idx_waste_order_status ON waste_recycling_order(status, appointment_at);
+        CREATE INDEX IF NOT EXISTS idx_waste_order_elderly ON waste_recycling_order(elderly_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_waste_item_order ON waste_recycling_item(order_id);
+        CREATE INDEX IF NOT EXISTS idx_waste_settlement_order ON waste_settlement(order_id);
+        CREATE INDEX IF NOT EXISTS idx_waste_points_elderly ON waste_points_ledger(elderly_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_waste_inventory_status ON waste_inventory_lot(status, material_name);
+        CREATE INDEX IF NOT EXISTS idx_waste_inventory_tx_lot ON waste_inventory_transaction(lot_id, created_at DESC);
+      `);
+      const now = Date.now();
+      const insertCategory = db2.prepare(`
+        INSERT OR IGNORE INTO waste_category
+          (id,code,name,unit,guide_price_cents,points_per_unit,status,sort_order,remark,created_at,updated_at,deleted_at)
+        VALUES (@id,@code,@name,'kg',@guide_price_cents,@points_per_unit,'active',@sort_order,NULL,@created_at,@updated_at,NULL)
+      `);
+      [
+        ["waste-paper", "paper", "废纸", 80, 1, 10],
+        ["waste-plastic", "plastic", "塑料", 120, 1, 20],
+        ["waste-metal", "metal", "金属", 350, 3, 30],
+        ["waste-glass", "glass", "玻璃", 20, 0, 40],
+        ["waste-textile", "textile", "旧衣纺织物", 50, 1, 50],
+        ["waste-appliance", "appliance", "废旧家电", 100, 2, 60],
+        ["waste-hazardous", "hazardous", "有害废弃物", 0, 0, 70],
+        ["waste-other", "other", "其他", 0, 0, 99]
+      ].forEach(
+        ([id, code, name, guide_price_cents, points_per_unit, sort_order]) => insertCategory.run({ id, code, name, guide_price_cents, points_per_unit, sort_order, created_at: now, updated_at: now })
+      );
+      const addMenu = (table) => {
+        const rows = db2.prepare(`SELECT id, menu_keys FROM ${table}`).all();
+        const update = db2.prepare(`UPDATE ${table} SET menu_keys=?, updated_at=? WHERE id=?`);
+        for (const row of rows) {
+          let keys = [];
+          try {
+            keys = JSON.parse(row.menu_keys);
+          } catch {
+            keys = [];
+          }
+          if (!keys.includes("*") && !keys.includes("waste-recycling")) {
+            update.run(JSON.stringify([...keys, "waste-recycling"]), now, row.id);
+          }
+        }
+      };
+      addMenu("sys_role");
+      addMenu("sys_permission_group");
+    }
+  },
+  {
+    version: 38,
+    description: "创建代买服务、医疗合作机构、陪诊转诊与随访闭环",
+    up: (db2) => {
+      db2.exec(`
+        CREATE TABLE IF NOT EXISTS proxy_purchase_order (
+          id TEXT PRIMARY KEY, order_no TEXT NOT NULL UNIQUE, elderly_id TEXT NOT NULL,
+          category TEXT NOT NULL, requester_name TEXT NOT NULL, requester_phone TEXT,
+          merchant_name TEXT, delivery_address TEXT NOT NULL, expected_at TEXT,
+          goods_amount_cents INTEGER NOT NULL DEFAULT 0, delivery_fee_cents INTEGER NOT NULL DEFAULT 0,
+          service_fee_cents INTEGER NOT NULL DEFAULT 0, total_amount_cents INTEGER NOT NULL DEFAULT 0,
+          advance_amount_cents INTEGER NOT NULL DEFAULT 0, prescription_required INTEGER NOT NULL DEFAULT 0,
+          prescription_no TEXT, prescription_verified_by TEXT, prescription_verified_at INTEGER,
+          status TEXT NOT NULL DEFAULT 'pending', assignee_id TEXT, assignee_name TEXT, assigned_at INTEGER,
+          purchased_at INTEGER, delivery_started_at INTEGER, delivered_at INTEGER, signed_by TEXT, signed_at INTEGER,
+          settlement_method TEXT, settlement_status TEXT NOT NULL DEFAULT 'unsettled', bill_id TEXT,
+          settled_at INTEGER, cancel_reason TEXT, created_by TEXT, created_by_name TEXT, remark TEXT,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS proxy_purchase_item (
+          id TEXT PRIMARY KEY, order_id TEXT NOT NULL, item_name TEXT NOT NULL, specification TEXT,
+          quantity REAL NOT NULL, unit TEXT NOT NULL DEFAULT '件', unit_price_cents INTEGER NOT NULL DEFAULT 0,
+          amount_cents INTEGER NOT NULL DEFAULT 0, medicine_type TEXT, dosage TEXT, remark TEXT,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS medical_partner (
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, partner_type TEXT NOT NULL, hospital_level TEXT,
+          specialties TEXT, contact_name TEXT, contact_phone TEXT, address TEXT, emergency_channel TEXT,
+          agreement_no TEXT, agreement_start TEXT, agreement_end TEXT, settlement_cycle TEXT,
+          status TEXT NOT NULL DEFAULT 'active', remark TEXT, created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL, deleted_at INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS medical_referral (
+          id TEXT PRIMARY KEY, referral_no TEXT NOT NULL UNIQUE, elderly_id TEXT NOT NULL,
+          partner_id TEXT NOT NULL, partner_name TEXT NOT NULL, service_type TEXT NOT NULL,
+          priority TEXT NOT NULL DEFAULT 'normal', appointment_at TEXT NOT NULL, department TEXT,
+          doctor TEXT, reason TEXT NOT NULL, symptoms TEXT, escort_required INTEGER NOT NULL DEFAULT 0,
+          escort_user_id TEXT, escort_user_name TEXT, status TEXT NOT NULL DEFAULT 'pending',
+          partner_confirmed_at INTEGER, departed_at INTEGER, consultation_started_at INTEGER,
+          completed_at INTEGER, diagnosis TEXT, treatment_plan TEXT, prescription TEXT, next_visit_at TEXT,
+          medical_fee_cents INTEGER NOT NULL DEFAULT 0, transport_fee_cents INTEGER NOT NULL DEFAULT 0,
+          service_fee_cents INTEGER NOT NULL DEFAULT 0, total_amount_cents INTEGER NOT NULL DEFAULT 0,
+          settlement_status TEXT NOT NULL DEFAULT 'unpaid', bill_id TEXT, cancel_reason TEXT,
+          created_by TEXT, created_by_name TEXT, remark TEXT, created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL, deleted_at INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS medical_follow_up (
+          id TEXT PRIMARY KEY, referral_id TEXT NOT NULL, elderly_id TEXT NOT NULL, follow_up_at TEXT NOT NULL,
+          method TEXT NOT NULL, condition TEXT NOT NULL, medication_compliance TEXT, adverse_reaction TEXT,
+          next_action TEXT, next_follow_up_at TEXT, staff_id TEXT, staff_name TEXT NOT NULL,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_proxy_purchase_status ON proxy_purchase_order(status, expected_at);
+        CREATE INDEX IF NOT EXISTS idx_proxy_purchase_elderly ON proxy_purchase_order(elderly_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_proxy_purchase_item_order ON proxy_purchase_item(order_id);
+        CREATE INDEX IF NOT EXISTS idx_medical_partner_status ON medical_partner(status, partner_type);
+        CREATE INDEX IF NOT EXISTS idx_medical_referral_status ON medical_referral(status, appointment_at);
+        CREATE INDEX IF NOT EXISTS idx_medical_referral_elderly ON medical_referral(elderly_id, appointment_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_medical_follow_up_referral ON medical_follow_up(referral_id, follow_up_at DESC);
+      `);
+      const now = Date.now();
+      const addMenu = (table) => {
+        const rows = db2.prepare(`SELECT id, menu_keys FROM ${table}`).all();
+        const update = db2.prepare(`UPDATE ${table} SET menu_keys=?, updated_at=? WHERE id=?`);
+        for (const row of rows) {
+          let keys = [];
+          try {
+            keys = JSON.parse(row.menu_keys);
+          } catch {
+            keys = [];
+          }
+          if (!keys.includes("*") && !keys.includes("assisted-services")) {
+            update.run(JSON.stringify([...keys, "assisted-services"]), now, row.id);
+          }
+        }
+      };
+      addMenu("sys_role");
+      addMenu("sys_permission_group");
+    }
+  },
+  {
+    version: 39,
+    description: "增加快递代拿及代办服务免费固定和自定义收费配置",
+    up: (db2) => {
+      db2.exec(`
+        CREATE TABLE IF NOT EXISTS assisted_service_catalog (
+          id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, category TEXT NOT NULL,
+          charge_mode TEXT NOT NULL DEFAULT 'custom', default_service_fee_cents INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'active', sort_order INTEGER NOT NULL DEFAULT 0, remark TEXT,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_assisted_service_catalog_status
+          ON assisted_service_catalog(status, sort_order);
+        ALTER TABLE proxy_purchase_order ADD COLUMN service_catalog_id TEXT;
+        ALTER TABLE proxy_purchase_order ADD COLUMN charge_mode TEXT NOT NULL DEFAULT 'custom';
+      `);
+      const now = Date.now();
+      const insert = db2.prepare(`
+        INSERT OR IGNORE INTO assisted_service_catalog
+          (id,code,name,category,charge_mode,default_service_fee_cents,status,sort_order,remark,created_at,updated_at,deleted_at)
+        VALUES
+          (@id,@code,@name,@category,@charge_mode,@default_service_fee_cents,'active',@sort_order,@remark,@created_at,@updated_at,NULL)
+      `);
+      [
+        ["service-takeaway", "takeaway", "外卖代买", "takeaway", "custom", 0, 10, "餐食下单、取餐和配送"],
+        ["service-medicine", "medicine", "药品代买", "medicine", "custom", 0, 20, "处方药购买前必须核验处方"],
+        ["service-daily-goods", "daily_goods", "生活用品代买", "daily_goods", "custom", 0, 30, "日用品、食品等代买"],
+        ["service-package", "package_pickup", "代拿快递", "package_pickup", "free", 0, 40, "快递站取件并送达老人"],
+        ["service-errand", "errand", "其他跑腿", "errand", "custom", 0, 50, "其他可派单代办事项"]
+      ].forEach(
+        ([id, code, name, category, charge_mode, default_service_fee_cents, sort_order, remark]) => insert.run({ id, code, name, category, charge_mode, default_service_fee_cents, sort_order, remark, created_at: now, updated_at: now })
+      );
+    }
+  },
+  {
+    version: 40,
+    description: "开放人体经络与解剖三维教学菜单",
+    up: (db2) => {
+      const now = Date.now();
+      const addMenu = (table) => {
+        const rows = db2.prepare(`SELECT id, menu_keys FROM ${table}`).all();
+        const update = db2.prepare(`UPDATE ${table} SET menu_keys=?, updated_at=? WHERE id=?`);
+        for (const row of rows) {
+          let keys = [];
+          try {
+            keys = JSON.parse(row.menu_keys);
+          } catch {
+            keys = [];
+          }
+          if (!keys.includes("*") && !keys.includes("human-meridian")) {
+            update.run(JSON.stringify([...keys, "human-meridian"]), now, row.id);
+          }
+        }
+      };
+      addMenu("sys_role");
+      addMenu("sys_permission_group");
+    }
+  }
 ];
 function runMigrations(db2) {
   db2.exec(`
@@ -4568,6 +4808,1020 @@ class ChatRepo {
     return new Date(timestamp).toISOString();
   }
 }
+const CATEGORY_UPDATE_FIELDS = /* @__PURE__ */ new Set([
+  "code",
+  "name",
+  "unit",
+  "guide_price_cents",
+  "points_per_unit",
+  "status",
+  "sort_order",
+  "remark"
+]);
+class WasteRecyclingRepo {
+  constructor(db2) {
+    this.db = db2;
+    this.changeLog = new ChangeLogRepo(db2);
+  }
+  db;
+  changeLog;
+  findCategories(activeOnly = false) {
+    const sql = activeOnly ? `SELECT * FROM waste_category WHERE deleted_at IS NULL AND status='active' ORDER BY sort_order,name` : `SELECT * FROM waste_category WHERE deleted_at IS NULL ORDER BY sort_order,name`;
+    return this.db.prepare(sql).all();
+  }
+  createCategory(data) {
+    if (!data.code.trim() || !data.name.trim()) throw new Error("品类编码和名称不能为空");
+    if (!Number.isInteger(data.guide_price_cents) || data.guide_price_cents < 0) throw new Error("指导价必须是非负整数分");
+    if (!Number.isInteger(data.points_per_unit) || data.points_per_unit < 0) throw new Error("积分系数必须是非负整数");
+    const now = Date.now();
+    const row = { ...data, id: nanoid$1.nanoid(), created_at: now, updated_at: now, deleted_at: null };
+    this.db.prepare(`
+      INSERT INTO waste_category
+        (id,code,name,unit,guide_price_cents,points_per_unit,status,sort_order,remark,created_at,updated_at,deleted_at)
+      VALUES
+        (@id,@code,@name,@unit,@guide_price_cents,@points_per_unit,@status,@sort_order,@remark,@created_at,@updated_at,@deleted_at)
+    `).run(row);
+    this.log("waste_category", "INSERT", row);
+    return row;
+  }
+  updateCategory(id, data) {
+    const fields = Object.keys(data).filter((field) => CATEGORY_UPDATE_FIELDS.has(field));
+    if (!fields.length) throw new Error("没有可更新的品类字段");
+    if (data.guide_price_cents !== void 0 && (!Number.isInteger(data.guide_price_cents) || data.guide_price_cents < 0)) {
+      throw new Error("指导价必须是非负整数分");
+    }
+    const now = Date.now();
+    const sets = [...fields, "updated_at"].map((field) => `${field}=@${field}`).join(",");
+    const values = Object.fromEntries(fields.map((field) => [field, data[field]]));
+    const result = this.db.prepare(`UPDATE waste_category SET ${sets} WHERE id=@id AND deleted_at IS NULL`).run({ ...values, updated_at: now, id });
+    if (!result.changes) throw new Error("回收品类不存在");
+    const row = this.getCategory(id);
+    this.log("waste_category", "UPDATE", row);
+    return row;
+  }
+  deleteCategory(id) {
+    const used = this.db.prepare(
+      `SELECT COUNT(*) AS count FROM waste_recycling_item WHERE category_id=?`
+    ).get(id)?.count ?? 0;
+    if (used > 0) throw new Error("该品类已有回收记录，请停用而不是删除");
+    const now = Date.now();
+    const result = this.db.prepare(`UPDATE waste_category SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL`).run(now, now, id);
+    if (!result.changes) throw new Error("回收品类不存在");
+    this.log("waste_category", "DELETE", { id, deleted_at: now, updated_at: now });
+  }
+  findOrders(query = {}) {
+    const where = ["deleted_at IS NULL"];
+    const params = {};
+    if (query.status) {
+      where.push("status=@status");
+      params.status = query.status;
+    }
+    if (query.keyword?.trim()) {
+      where.push(`(order_no LIKE @keyword OR contact_name LIKE @keyword OR contact_phone LIKE @keyword OR assignee_name LIKE @keyword)`);
+      params.keyword = `%${query.keyword.trim()}%`;
+    }
+    if (query.startDate) {
+      where.push(`substr(appointment_at,1,10)>=@startDate`);
+      params.startDate = query.startDate;
+    }
+    if (query.endDate) {
+      where.push(`substr(appointment_at,1,10)<=@endDate`);
+      params.endDate = query.endDate;
+    }
+    return this.db.prepare(
+      `SELECT * FROM waste_recycling_order WHERE ${where.join(" AND ")} ORDER BY appointment_at DESC,created_at DESC`
+    ).all(params);
+  }
+  findOrder(id) {
+    const row = this.db.prepare(
+      `SELECT * FROM waste_recycling_order WHERE id=? AND deleted_at IS NULL`
+    ).get(id);
+    if (!row) throw new Error("回收单不存在");
+    return row;
+  }
+  findItems(orderId) {
+    return this.db.prepare(
+      `SELECT * FROM waste_recycling_item WHERE order_id=? ORDER BY created_at,id`
+    ).all(orderId);
+  }
+  createOrder(data) {
+    if (!data.contact_name.trim()) throw new Error("联系人不能为空");
+    if (!data.appointment_at.trim()) throw new Error("预约时间不能为空");
+    if (data.pickup_type === "pickup" && !data.pickup_address?.trim()) throw new Error("上门回收必须填写地址");
+    const now = Date.now();
+    const row = {
+      ...data,
+      id: nanoid$1.nanoid(),
+      order_no: `WR${this.dateToken(now)}${String(now).slice(-5)}`,
+      total_weight: 0,
+      total_amount_cents: 0,
+      points: 0,
+      status: "pending",
+      assignee_id: null,
+      assignee_name: null,
+      assigned_at: null,
+      collected_at: null,
+      weighed_at: null,
+      settled_at: null,
+      completed_at: null,
+      cancel_reason: null,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null
+    };
+    this.db.prepare(`
+      INSERT INTO waste_recycling_order
+        (id,order_no,source_type,elderly_id,contact_name,contact_phone,pickup_type,pickup_address,
+         appointment_at,estimated_weight,total_weight,total_amount_cents,points,status,assignee_id,
+         assignee_name,assigned_at,collected_at,weighed_at,settled_at,completed_at,cancel_reason,
+         created_by,created_by_name,remark,created_at,updated_at,deleted_at)
+      VALUES
+        (@id,@order_no,@source_type,@elderly_id,@contact_name,@contact_phone,@pickup_type,@pickup_address,
+         @appointment_at,@estimated_weight,@total_weight,@total_amount_cents,@points,@status,@assignee_id,
+         @assignee_name,@assigned_at,@collected_at,@weighed_at,@settled_at,@completed_at,@cancel_reason,
+         @created_by,@created_by_name,@remark,@created_at,@updated_at,@deleted_at)
+    `).run(row);
+    this.log("waste_recycling_order", "INSERT", row);
+    return row;
+  }
+  assign(id, assigneeId, assigneeName) {
+    if (!assigneeId || !assigneeName.trim()) throw new Error("请选择回收负责人");
+    return this.transition(id, ["pending", "assigned"], "assigned", {
+      assignee_id: assigneeId,
+      assignee_name: assigneeName.trim(),
+      assigned_at: Date.now()
+    });
+  }
+  startCollection(id) {
+    return this.transition(id, ["assigned"], "collecting", { collected_at: Date.now() });
+  }
+  weigh(id, inputs) {
+    if (!inputs.length) throw new Error("至少需要一条称重明细");
+    const order = this.findOrder(id);
+    if (!["assigned", "collecting", "weighed"].includes(order.status)) throw new Error("当前状态不能称重");
+    const categories = new Map(this.findCategories().map((category) => [category.id, category]));
+    const now = Date.now();
+    const rows = inputs.map((input) => {
+      const category = categories.get(input.category_id);
+      if (!category || category.status !== "active") throw new Error("回收品类不存在或已停用");
+      const gross = Number(input.gross_weight);
+      const tare = Number(input.tare_weight || 0);
+      if (!Number.isFinite(gross) || gross <= 0 || !Number.isFinite(tare) || tare < 0 || tare >= gross) {
+        throw new Error("毛重必须大于零，皮重必须小于毛重");
+      }
+      const net = Number((gross - tare).toFixed(3));
+      const unitPrice = input.unit_price_cents ?? category.guide_price_cents;
+      if (!Number.isInteger(unitPrice) || unitPrice < 0) throw new Error("回收单价必须是非负整数分");
+      return {
+        id: nanoid$1.nanoid(),
+        order_id: id,
+        category_id: category.id,
+        category_name: category.name,
+        material_name: input.material_name.trim() || category.name,
+        unit: category.unit,
+        gross_weight: gross,
+        tare_weight: tare,
+        net_weight: net,
+        unit_price_cents: unitPrice,
+        amount_cents: Math.round(net * unitPrice),
+        quality_grade: input.quality_grade ?? "normal",
+        remark: input.remark ?? null,
+        created_at: now,
+        updated_at: now
+      };
+    });
+    const totalWeight = Number(rows.reduce((sum, row) => sum + row.net_weight, 0).toFixed(3));
+    const totalAmount = rows.reduce((sum, row) => sum + row.amount_cents, 0);
+    const points = rows.reduce((sum, row) => {
+      const category = categories.get(row.category_id);
+      return sum + Math.floor(row.net_weight * category.points_per_unit);
+    }, 0);
+    this.db.transaction(() => {
+      const previous = this.findItems(id);
+      this.db.prepare(`DELETE FROM waste_recycling_item WHERE order_id=?`).run(id);
+      previous.forEach((row) => this.log("waste_recycling_item", "DELETE", { id: row.id }));
+      const insert = this.db.prepare(`
+        INSERT INTO waste_recycling_item
+          (id,order_id,category_id,category_name,material_name,unit,gross_weight,tare_weight,net_weight,
+           unit_price_cents,amount_cents,quality_grade,remark,created_at,updated_at)
+        VALUES
+          (@id,@order_id,@category_id,@category_name,@material_name,@unit,@gross_weight,@tare_weight,@net_weight,
+           @unit_price_cents,@amount_cents,@quality_grade,@remark,@created_at,@updated_at)
+      `);
+      rows.forEach((row) => {
+        insert.run(row);
+        this.log("waste_recycling_item", "INSERT", row);
+      });
+      this.db.prepare(`
+        UPDATE waste_recycling_order SET status='weighed',total_weight=?,total_amount_cents=?,points=?,weighed_at=?,updated_at=? WHERE id=?
+      `).run(totalWeight, totalAmount, points, now, now, id);
+      this.log("waste_recycling_order", "UPDATE", this.findOrder(id));
+    })();
+    return this.findOrder(id);
+  }
+  settle(id, input) {
+    const order = this.findOrder(id);
+    if (order.status !== "weighed") throw new Error("回收单称重后才能结算");
+    const existing = this.db.prepare(`SELECT * FROM waste_settlement WHERE order_id=?`).get(id);
+    if (existing) throw new Error("该回收单已经结算");
+    const points = input.method === "points" ? input.points ?? order.points : 0;
+    const cashAmount = ["cash", "bank"].includes(input.method) ? input.cash_amount_cents ?? order.total_amount_cents : 0;
+    if (!Number.isInteger(cashAmount) || cashAmount < 0) throw new Error("结算金额必须是非负整数分");
+    if (!Number.isInteger(points) || points < 0) throw new Error("结算积分必须是非负整数");
+    if (input.method === "points" && !order.elderly_id) throw new Error("积分结算必须关联老人档案");
+    const now = Date.now();
+    const settlement = {
+      id: nanoid$1.nanoid(),
+      settlement_no: `WS${this.dateToken(now)}${String(now).slice(-5)}`,
+      order_id: id,
+      method: input.method,
+      cash_amount_cents: cashAmount,
+      points,
+      payee: input.payee ?? order.contact_name,
+      operator: input.operator ?? null,
+      settled_at: now,
+      remark: input.remark ?? null,
+      created_at: now
+    };
+    const items = this.findItems(id);
+    this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO waste_settlement
+          (id,settlement_no,order_id,method,cash_amount_cents,points,payee,operator,settled_at,remark,created_at)
+        VALUES
+          (@id,@settlement_no,@order_id,@method,@cash_amount_cents,@points,@payee,@operator,@settled_at,@remark,@created_at)
+      `).run(settlement);
+      this.log("waste_settlement", "INSERT", settlement);
+      if (points > 0 && order.elderly_id) {
+        const ledger = {
+          id: nanoid$1.nanoid(),
+          elderly_id: order.elderly_id,
+          order_id: id,
+          change_points: points,
+          reason: `废品回收 ${order.order_no}`,
+          operator: input.operator ?? null,
+          occurred_at: now,
+          created_at: now
+        };
+        this.db.prepare(`
+          INSERT INTO waste_points_ledger (id,elderly_id,order_id,change_points,reason,operator,occurred_at,created_at)
+          VALUES (@id,@elderly_id,@order_id,@change_points,@reason,@operator,@occurred_at,@created_at)
+        `).run(ledger);
+        this.log("waste_points_ledger", "INSERT", ledger);
+      }
+      const insertLot = this.db.prepare(`
+        INSERT INTO waste_inventory_lot
+          (id,order_id,item_id,category_id,material_name,unit,quantity,remaining_quantity,cost_amount_cents,
+           storage_location,status,created_at,updated_at)
+        VALUES
+          (@id,@order_id,@item_id,@category_id,@material_name,@unit,@quantity,@remaining_quantity,@cost_amount_cents,
+           @storage_location,@status,@created_at,@updated_at)
+      `);
+      const insertTransaction = this.db.prepare(`
+        INSERT INTO waste_inventory_transaction
+          (id,lot_id,transaction_type,quantity,destination,counterparty,unit_price_cents,amount_cents,
+           operator,occurred_at,remark,created_at)
+        VALUES
+          (@id,@lot_id,@transaction_type,@quantity,@destination,@counterparty,@unit_price_cents,@amount_cents,
+           @operator,@occurred_at,@remark,@created_at)
+      `);
+      items.forEach((item) => {
+        const lot = {
+          id: nanoid$1.nanoid(),
+          order_id: id,
+          item_id: item.id,
+          category_id: item.category_id,
+          material_name: item.material_name,
+          unit: item.unit,
+          quantity: item.net_weight,
+          remaining_quantity: item.net_weight,
+          cost_amount_cents: item.amount_cents,
+          storage_location: input.storage_location ?? null,
+          status: "in_stock",
+          created_at: now,
+          updated_at: now
+        };
+        const transaction = {
+          id: nanoid$1.nanoid(),
+          lot_id: lot.id,
+          transaction_type: "in",
+          quantity: lot.quantity,
+          destination: lot.storage_location,
+          counterparty: order.contact_name,
+          unit_price_cents: item.unit_price_cents,
+          amount_cents: item.amount_cents,
+          operator: input.operator ?? null,
+          occurred_at: new Date(now).toISOString(),
+          remark: order.order_no,
+          created_at: now
+        };
+        insertLot.run(lot);
+        insertTransaction.run(transaction);
+        this.log("waste_inventory_lot", "INSERT", lot);
+        this.log("waste_inventory_transaction", "INSERT", transaction);
+      });
+      this.db.prepare(`UPDATE waste_recycling_order SET status='settled',settled_at=?,updated_at=? WHERE id=?`).run(now, now, id);
+      this.log("waste_recycling_order", "UPDATE", this.findOrder(id));
+    })();
+    return settlement;
+  }
+  complete(id) {
+    return this.transition(id, ["settled"], "completed", { completed_at: Date.now() });
+  }
+  cancel(id, reason) {
+    if (!reason.trim()) throw new Error("请填写取消原因");
+    return this.transition(id, ["pending", "assigned", "collecting"], "cancelled", { cancel_reason: reason.trim() });
+  }
+  findSettlement(orderId) {
+    return this.db.prepare(`SELECT * FROM waste_settlement WHERE order_id=?`).get(orderId) ?? null;
+  }
+  findPointsLedger(elderlyId) {
+    const sql = elderlyId ? `SELECT * FROM waste_points_ledger WHERE elderly_id=? ORDER BY occurred_at DESC` : `SELECT * FROM waste_points_ledger ORDER BY occurred_at DESC LIMIT 500`;
+    return elderlyId ? this.db.prepare(sql).all(elderlyId) : this.db.prepare(sql).all();
+  }
+  getPointsBalance(elderlyId) {
+    return this.db.prepare(
+      `SELECT COALESCE(SUM(change_points),0) AS balance FROM waste_points_ledger WHERE elderly_id=?`
+    ).get(elderlyId)?.balance ?? 0;
+  }
+  findInventory(status) {
+    const sql = status ? `SELECT * FROM waste_inventory_lot WHERE status=? ORDER BY created_at DESC` : `SELECT * FROM waste_inventory_lot ORDER BY CASE status WHEN 'in_stock' THEN 0 WHEN 'partial' THEN 1 ELSE 2 END,created_at DESC`;
+    return status ? this.db.prepare(sql).all(status) : this.db.prepare(sql).all();
+  }
+  findInventoryTransactions(lotId) {
+    return this.db.prepare(
+      `SELECT * FROM waste_inventory_transaction WHERE lot_id=? ORDER BY created_at DESC`
+    ).all(lotId);
+  }
+  transactInventory(lotId, input) {
+    const lot = this.db.prepare(`SELECT * FROM waste_inventory_lot WHERE id=?`).get(lotId);
+    if (!lot) throw new Error("库存批次不存在");
+    if (!Number.isFinite(input.quantity) || input.quantity === 0) throw new Error("出入库数量不能为零");
+    if (!Number.isInteger(input.unit_price_cents) || input.unit_price_cents < 0) throw new Error("单价必须是非负整数分");
+    const delta = input.transaction_type === "out" ? -Math.abs(input.quantity) : input.quantity;
+    const remaining = Number((lot.remaining_quantity + delta).toFixed(3));
+    if (remaining < 0) throw new Error("出库数量不能超过剩余库存");
+    if (input.transaction_type === "out" && !input.destination?.trim()) throw new Error("出库必须填写去向");
+    const now = Date.now();
+    const transaction = {
+      ...input,
+      quantity: input.transaction_type === "adjust" ? input.quantity : Math.abs(input.quantity),
+      id: nanoid$1.nanoid(),
+      lot_id: lotId,
+      amount_cents: Math.round(Math.abs(input.quantity) * input.unit_price_cents),
+      created_at: now
+    };
+    const status = remaining === 0 ? "out" : remaining < lot.quantity ? "partial" : "in_stock";
+    this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO waste_inventory_transaction
+          (id,lot_id,transaction_type,quantity,destination,counterparty,unit_price_cents,amount_cents,
+           operator,occurred_at,remark,created_at)
+        VALUES
+          (@id,@lot_id,@transaction_type,@quantity,@destination,@counterparty,@unit_price_cents,@amount_cents,
+           @operator,@occurred_at,@remark,@created_at)
+      `).run(transaction);
+      this.db.prepare(`UPDATE waste_inventory_lot SET remaining_quantity=?,status=?,updated_at=? WHERE id=?`).run(remaining, status, now, lotId);
+      this.log("waste_inventory_transaction", "INSERT", transaction);
+      this.log("waste_inventory_lot", "UPDATE", this.db.prepare(`SELECT * FROM waste_inventory_lot WHERE id=?`).get(lotId));
+    })();
+    return transaction;
+  }
+  getStats(startDate, endDate) {
+    const filters = [`deleted_at IS NULL`, `status!='cancelled'`];
+    const params = {};
+    if (startDate) {
+      filters.push(`substr(appointment_at,1,10)>=@startDate`);
+      params.startDate = startDate;
+    }
+    if (endDate) {
+      filters.push(`substr(appointment_at,1,10)<=@endDate`);
+      params.endDate = endDate;
+    }
+    const where = filters.join(" AND ");
+    const totals = this.db.prepare(`
+      SELECT COUNT(*) total_orders,
+        SUM(CASE WHEN status IN ('pending','assigned','collecting','weighed') THEN 1 ELSE 0 END) pending_orders,
+        SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed_orders,
+        COALESCE(SUM(total_weight),0) total_weight,
+        COALESCE(SUM(total_amount_cents),0) total_amount_cents
+      FROM waste_recycling_order WHERE ${where}
+    `).get(params);
+    const totalPoints = this.db.prepare(`
+      SELECT COALESCE(SUM(s.points),0) value
+      FROM waste_settlement s JOIN waste_recycling_order o ON o.id=s.order_id
+      WHERE ${where.replaceAll("status", "o.status").replaceAll("deleted_at", "o.deleted_at")}
+    `).get(params);
+    const inventoryWeight = this.db.prepare(
+      `SELECT COALESCE(SUM(remaining_quantity),0) value FROM waste_inventory_lot WHERE status!='out'`
+    ).get()?.value ?? 0;
+    const byCategory = this.db.prepare(`
+      SELECT i.category_name,ROUND(SUM(i.net_weight),3) weight,SUM(i.amount_cents) amount_cents
+      FROM waste_recycling_item i JOIN waste_recycling_order o ON o.id=i.order_id
+      WHERE ${where.replaceAll("status", "o.status").replaceAll("deleted_at", "o.deleted_at")}
+      GROUP BY i.category_id,i.category_name ORDER BY weight DESC
+    `).all(params);
+    const monthlyTrend = this.db.prepare(`
+      SELECT substr(appointment_at,1,7) month,COUNT(*) orders,ROUND(SUM(total_weight),3) weight,SUM(total_amount_cents) amount_cents
+      FROM waste_recycling_order WHERE ${where}
+      GROUP BY substr(appointment_at,1,7) ORDER BY month DESC LIMIT 12
+    `).all(params);
+    return {
+      ...totals,
+      total_points: totalPoints.value,
+      inventory_weight: inventoryWeight,
+      by_category: byCategory,
+      monthly_trend: monthlyTrend.reverse()
+    };
+  }
+  getCategory(id) {
+    const row = this.db.prepare(
+      `SELECT * FROM waste_category WHERE id=? AND deleted_at IS NULL`
+    ).get(id);
+    if (!row) throw new Error("回收品类不存在");
+    return row;
+  }
+  transition(id, from, to, extra = {}) {
+    const order = this.findOrder(id);
+    if (!from.includes(order.status)) throw new Error(`回收单当前状态不能变更为“${to}”`);
+    const now = Date.now();
+    const fields = { ...extra, status: to, updated_at: now };
+    const sets = Object.keys(fields).map((field) => `${field}=@${field}`).join(",");
+    this.db.prepare(`UPDATE waste_recycling_order SET ${sets} WHERE id=@id`).run({ ...fields, id });
+    const row = this.findOrder(id);
+    this.log("waste_recycling_order", "UPDATE", row);
+    return row;
+  }
+  log(tableName, operation, payload) {
+    const id = String(payload.id ?? "");
+    this.changeLog.insert({ table_name: tableName, record_id: id, operation, payload: JSON.stringify(payload) });
+  }
+  dateToken(timestamp) {
+    const date2 = new Date(timestamp);
+    return `${date2.getFullYear()}${String(date2.getMonth() + 1).padStart(2, "0")}${String(date2.getDate()).padStart(2, "0")}`;
+  }
+}
+const PARTNER_FIELDS = /* @__PURE__ */ new Set([
+  "name",
+  "partner_type",
+  "hospital_level",
+  "specialties",
+  "contact_name",
+  "contact_phone",
+  "address",
+  "emergency_channel",
+  "agreement_no",
+  "agreement_start",
+  "agreement_end",
+  "settlement_cycle",
+  "status",
+  "remark"
+]);
+const SERVICE_CATALOG_FIELDS = /* @__PURE__ */ new Set([
+  "code",
+  "name",
+  "category",
+  "charge_mode",
+  "default_service_fee_cents",
+  "status",
+  "sort_order",
+  "remark"
+]);
+class AssistedServicesRepo {
+  constructor(db2) {
+    this.db = db2;
+    this.changeLog = new ChangeLogRepo(db2);
+  }
+  db;
+  changeLog;
+  findServiceCatalog(activeOnly = false) {
+    const sql = activeOnly ? "SELECT * FROM assisted_service_catalog WHERE deleted_at IS NULL AND status='active' ORDER BY sort_order,name" : "SELECT * FROM assisted_service_catalog WHERE deleted_at IS NULL ORDER BY status,sort_order,name";
+    return this.db.prepare(sql).all();
+  }
+  createServiceCatalog(data) {
+    if (!data.code.trim() || !data.name.trim()) throw new Error("服务编码和名称不能为空");
+    this.assertCents(data.default_service_fee_cents, "默认服务费");
+    const now = Date.now();
+    const row = {
+      ...data,
+      default_service_fee_cents: data.charge_mode === "free" ? 0 : data.default_service_fee_cents,
+      id: nanoid$1.nanoid(),
+      created_at: now,
+      updated_at: now,
+      deleted_at: null
+    };
+    this.db.prepare(`
+      INSERT INTO assisted_service_catalog
+        (id,code,name,category,charge_mode,default_service_fee_cents,status,sort_order,remark,created_at,updated_at,deleted_at)
+      VALUES
+        (@id,@code,@name,@category,@charge_mode,@default_service_fee_cents,@status,@sort_order,@remark,@created_at,@updated_at,@deleted_at)
+    `).run(row);
+    this.log("assisted_service_catalog", "INSERT", row);
+    return row;
+  }
+  updateServiceCatalog(id, data) {
+    const fields = Object.keys(data).filter((field) => SERVICE_CATALOG_FIELDS.has(field));
+    if (data.charge_mode === "free" && !fields.includes("default_service_fee_cents")) {
+      fields.push("default_service_fee_cents");
+    }
+    if (!fields.length) throw new Error("没有可更新的服务项目字段");
+    if (data.default_service_fee_cents !== void 0) this.assertCents(data.default_service_fee_cents, "默认服务费");
+    const values = Object.fromEntries(fields.map((field) => [field, data[field]]));
+    if (data.charge_mode === "free") values.default_service_fee_cents = 0;
+    const now = Date.now();
+    const result = this.db.prepare(`UPDATE assisted_service_catalog SET ${fields.map((field) => `${field}=@${field}`).join(",")},updated_at=@updated_at WHERE id=@id AND deleted_at IS NULL`).run({ ...values, updated_at: now, id });
+    if (!result.changes) throw new Error("代办服务项目不存在");
+    const row = this.db.prepare("SELECT * FROM assisted_service_catalog WHERE id=?").get(id);
+    if (!row) throw new Error("代办服务项目不存在");
+    this.log("assisted_service_catalog", "UPDATE", row);
+    return row;
+  }
+  findPurchaseOrders(query = {}) {
+    const where = ["deleted_at IS NULL"];
+    const params = {};
+    if (query.status) {
+      where.push("status=@status");
+      params.status = query.status;
+    }
+    if (query.category) {
+      where.push("category=@category");
+      params.category = query.category;
+    }
+    if (query.elderlyId) {
+      where.push("elderly_id=@elderlyId");
+      params.elderlyId = query.elderlyId;
+    }
+    if (query.keyword?.trim()) {
+      where.push("(order_no LIKE @keyword OR requester_name LIKE @keyword OR merchant_name LIKE @keyword OR assignee_name LIKE @keyword)");
+      params.keyword = `%${query.keyword.trim()}%`;
+    }
+    return this.db.prepare(
+      `SELECT * FROM proxy_purchase_order WHERE ${where.join(" AND ")} ORDER BY created_at DESC`
+    ).all(params);
+  }
+  findPurchaseOrder(id) {
+    const row = this.db.prepare(
+      "SELECT * FROM proxy_purchase_order WHERE id=? AND deleted_at IS NULL"
+    ).get(id);
+    if (!row) throw new Error("代买订单不存在");
+    return row;
+  }
+  findPurchaseItems(orderId) {
+    return this.db.prepare(
+      "SELECT * FROM proxy_purchase_item WHERE order_id=? ORDER BY created_at,id"
+    ).all(orderId);
+  }
+  createPurchaseOrder(data, items) {
+    if (!data.elderly_id || !data.requester_name.trim()) throw new Error("请选择老人并填写申请人");
+    if (!data.delivery_address.trim()) throw new Error("请填写送达地址");
+    if (!items.length) throw new Error("至少添加一项代买商品");
+    this.assertCents(data.delivery_fee_cents, "配送费");
+    this.assertCents(data.service_fee_cents, "服务费");
+    this.assertCents(data.advance_amount_cents, "垫付金额");
+    const catalog = data.service_catalog_id ? this.db.prepare(
+      "SELECT * FROM assisted_service_catalog WHERE id=? AND deleted_at IS NULL AND status='active'"
+    ).get(data.service_catalog_id) : null;
+    if (data.service_catalog_id && !catalog) throw new Error("代办服务项目不存在或已停用");
+    const category = catalog?.category ?? data.category;
+    const serviceFee = data.charge_mode === "free" ? 0 : data.charge_mode === "fixed" && catalog ? catalog.default_service_fee_cents : data.service_fee_cents;
+    const now = Date.now();
+    const normalizedItems = items.map((item) => {
+      if (!item.item_name.trim() || !Number.isFinite(item.quantity) || item.quantity <= 0) throw new Error("商品名称和数量填写不完整");
+      this.assertCents(item.unit_price_cents, "商品单价");
+      return {
+        ...item,
+        id: nanoid$1.nanoid(),
+        order_id: "",
+        item_name: item.item_name.trim(),
+        amount_cents: Math.round(item.quantity * item.unit_price_cents),
+        created_at: now,
+        updated_at: now
+      };
+    });
+    const requiresPrescription = category === "medicine" && (data.prescription_required === 1 || normalizedItems.some((item) => item.medicine_type === "prescription"));
+    const goodsAmount = normalizedItems.reduce((sum, item) => sum + item.amount_cents, 0);
+    const row = {
+      ...data,
+      category,
+      service_fee_cents: serviceFee,
+      prescription_required: requiresPrescription ? 1 : 0,
+      id: nanoid$1.nanoid(),
+      order_no: this.number("PP", now),
+      goods_amount_cents: goodsAmount,
+      total_amount_cents: goodsAmount + data.delivery_fee_cents + serviceFee,
+      status: "pending",
+      prescription_verified_by: null,
+      prescription_verified_at: null,
+      assignee_id: null,
+      assignee_name: null,
+      assigned_at: null,
+      purchased_at: null,
+      delivery_started_at: null,
+      delivered_at: null,
+      signed_by: null,
+      signed_at: null,
+      settlement_method: null,
+      settlement_status: "unsettled",
+      bill_id: null,
+      settled_at: null,
+      cancel_reason: null,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null
+    };
+    normalizedItems.forEach((item) => {
+      item.order_id = row.id;
+    });
+    this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO proxy_purchase_order
+          (id,order_no,elderly_id,service_catalog_id,category,charge_mode,requester_name,requester_phone,merchant_name,delivery_address,
+           expected_at,goods_amount_cents,delivery_fee_cents,service_fee_cents,total_amount_cents,
+           advance_amount_cents,prescription_required,prescription_no,prescription_verified_by,
+           prescription_verified_at,status,assignee_id,assignee_name,assigned_at,purchased_at,delivery_started_at,delivered_at,
+           signed_by,signed_at,settlement_method,settlement_status,bill_id,settled_at,cancel_reason,
+           created_by,created_by_name,remark,created_at,updated_at,deleted_at)
+        VALUES
+          (@id,@order_no,@elderly_id,@service_catalog_id,@category,@charge_mode,@requester_name,@requester_phone,@merchant_name,@delivery_address,
+           @expected_at,@goods_amount_cents,@delivery_fee_cents,@service_fee_cents,@total_amount_cents,
+           @advance_amount_cents,@prescription_required,@prescription_no,@prescription_verified_by,
+           @prescription_verified_at,@status,@assignee_id,@assignee_name,@assigned_at,@purchased_at,@delivery_started_at,@delivered_at,
+           @signed_by,@signed_at,@settlement_method,@settlement_status,@bill_id,@settled_at,@cancel_reason,
+           @created_by,@created_by_name,@remark,@created_at,@updated_at,@deleted_at)
+      `).run(row);
+      const insert = this.db.prepare(`
+        INSERT INTO proxy_purchase_item
+          (id,order_id,item_name,specification,quantity,unit,unit_price_cents,amount_cents,medicine_type,dosage,remark,created_at,updated_at)
+        VALUES
+          (@id,@order_id,@item_name,@specification,@quantity,@unit,@unit_price_cents,@amount_cents,@medicine_type,@dosage,@remark,@created_at,@updated_at)
+      `);
+      normalizedItems.forEach((item) => {
+        insert.run(item);
+        this.log("proxy_purchase_item", "INSERT", item);
+      });
+      this.log("proxy_purchase_order", "INSERT", row);
+    })();
+    return row;
+  }
+  assignPurchase(id, assigneeId, assigneeName) {
+    if (!assigneeId || !assigneeName.trim()) throw new Error("请选择代办负责人");
+    return this.purchaseTransition(id, ["pending", "assigned"], "assigned", {
+      assignee_id: assigneeId,
+      assignee_name: assigneeName.trim(),
+      assigned_at: Date.now()
+    });
+  }
+  verifyPrescription(id, prescriptionNo, verifier) {
+    const order = this.findPurchaseOrder(id);
+    if (order.category !== "medicine") throw new Error("仅药品代买需要处方核验");
+    if (!prescriptionNo.trim() || !verifier.trim()) throw new Error("请填写处方编号和核验人");
+    return this.purchaseTransition(id, ["pending", "assigned"], order.status, {
+      prescription_no: prescriptionNo.trim(),
+      prescription_verified_by: verifier.trim(),
+      prescription_verified_at: Date.now()
+    });
+  }
+  startPurchase(id) {
+    const order = this.findPurchaseOrder(id);
+    if (order.prescription_required === 1 && !order.prescription_verified_at) throw new Error("处方药购买前必须完成处方核验");
+    return this.purchaseTransition(id, ["assigned"], "purchasing", { purchased_at: Date.now() });
+  }
+  startDelivery(id) {
+    return this.purchaseTransition(id, ["purchasing"], "delivering", { delivery_started_at: Date.now() });
+  }
+  signPurchase(id, signedBy) {
+    if (!signedBy.trim()) throw new Error("请填写签收人");
+    const now = Date.now();
+    return this.purchaseTransition(id, ["delivering"], "delivered", {
+      delivered_at: now,
+      signed_by: signedBy.trim(),
+      signed_at: now
+    });
+  }
+  settlePurchase(id, method) {
+    const order = this.findPurchaseOrder(id);
+    if (order.status !== "delivered") throw new Error("订单签收后才能结算");
+    const now = Date.now();
+    let billId = null;
+    this.db.transaction(() => {
+      if (method === "monthly_bill" && order.total_amount_cents > 0) {
+        billId = this.appendMonthlyBill(order.elderly_id, order.total_amount_cents, `代买服务 ${order.order_no}`, order.remark, now);
+      }
+      this.db.prepare("UPDATE proxy_purchase_order SET status='settled',settlement_method=?,settlement_status=?,bill_id=?,settled_at=?,updated_at=? WHERE id=?").run(method, method === "monthly_bill" && order.total_amount_cents > 0 ? "monthly_bill" : "paid", billId, now, now, id);
+      this.log("proxy_purchase_order", "UPDATE", this.findPurchaseOrder(id));
+    })();
+    return this.findPurchaseOrder(id);
+  }
+  cancelPurchase(id, reason) {
+    if (!reason.trim()) throw new Error("请填写取消原因");
+    return this.purchaseTransition(id, ["pending", "assigned", "purchasing"], "cancelled", { cancel_reason: reason.trim() });
+  }
+  findPartners(activeOnly = false) {
+    return this.db.prepare(
+      `SELECT * FROM medical_partner WHERE deleted_at IS NULL${activeOnly ? " AND status='active'" : ""} ORDER BY status,name`
+    ).all();
+  }
+  createPartner(data) {
+    if (!data.name.trim()) throw new Error("合作机构名称不能为空");
+    const now = Date.now();
+    const row = { ...data, name: data.name.trim(), id: nanoid$1.nanoid(), created_at: now, updated_at: now, deleted_at: null };
+    this.db.prepare(`
+      INSERT INTO medical_partner
+        (id,name,partner_type,hospital_level,specialties,contact_name,contact_phone,address,emergency_channel,
+         agreement_no,agreement_start,agreement_end,settlement_cycle,status,remark,created_at,updated_at,deleted_at)
+      VALUES
+        (@id,@name,@partner_type,@hospital_level,@specialties,@contact_name,@contact_phone,@address,@emergency_channel,
+         @agreement_no,@agreement_start,@agreement_end,@settlement_cycle,@status,@remark,@created_at,@updated_at,@deleted_at)
+    `).run(row);
+    this.log("medical_partner", "INSERT", row);
+    return row;
+  }
+  updatePartner(id, data) {
+    const fields = Object.keys(data).filter((field) => PARTNER_FIELDS.has(field));
+    if (!fields.length) throw new Error("没有可更新的机构字段");
+    const now = Date.now();
+    const values = Object.fromEntries(fields.map((field) => [field, data[field]]));
+    const result = this.db.prepare(`UPDATE medical_partner SET ${fields.map((field) => `${field}=@${field}`).join(",")},updated_at=@updated_at WHERE id=@id AND deleted_at IS NULL`).run({ ...values, updated_at: now, id });
+    if (!result.changes) throw new Error("合作机构不存在");
+    const row = this.db.prepare("SELECT * FROM medical_partner WHERE id=?").get(id);
+    this.log("medical_partner", "UPDATE", row);
+    return row;
+  }
+  findReferrals(query = {}) {
+    const where = ["deleted_at IS NULL"];
+    const params = {};
+    if (query.status) {
+      where.push("status=@status");
+      params.status = query.status;
+    }
+    if (query.partnerId) {
+      where.push("partner_id=@partnerId");
+      params.partnerId = query.partnerId;
+    }
+    if (query.elderlyId) {
+      where.push("elderly_id=@elderlyId");
+      params.elderlyId = query.elderlyId;
+    }
+    if (query.keyword?.trim()) {
+      where.push("(referral_no LIKE @keyword OR partner_name LIKE @keyword OR reason LIKE @keyword OR escort_user_name LIKE @keyword)");
+      params.keyword = `%${query.keyword.trim()}%`;
+    }
+    return this.db.prepare(`SELECT * FROM medical_referral WHERE ${where.join(" AND ")} ORDER BY appointment_at DESC,created_at DESC`).all(params);
+  }
+  findReferral(id) {
+    const row = this.db.prepare("SELECT * FROM medical_referral WHERE id=? AND deleted_at IS NULL").get(id);
+    if (!row) throw new Error("就医协作单不存在");
+    return row;
+  }
+  createReferral(data) {
+    const partner = this.db.prepare("SELECT * FROM medical_partner WHERE id=? AND deleted_at IS NULL AND status='active'").get(data.partner_id);
+    if (!partner) throw new Error("请选择有效的合作机构");
+    if (!data.elderly_id || !data.appointment_at.trim() || !data.reason.trim()) throw new Error("请选择老人并填写预约时间和就医原因");
+    if (data.escort_required === 1 && (!data.escort_user_id || !data.escort_user_name?.trim())) throw new Error("陪诊服务必须指定陪诊人员");
+    const now = Date.now();
+    const row = {
+      ...data,
+      partner_name: partner.name,
+      id: nanoid$1.nanoid(),
+      referral_no: this.number("MR", now),
+      status: "pending",
+      partner_confirmed_at: null,
+      departed_at: null,
+      consultation_started_at: null,
+      completed_at: null,
+      diagnosis: null,
+      treatment_plan: null,
+      prescription: null,
+      next_visit_at: null,
+      medical_fee_cents: 0,
+      transport_fee_cents: 0,
+      service_fee_cents: 0,
+      total_amount_cents: 0,
+      settlement_status: "unpaid",
+      bill_id: null,
+      cancel_reason: null,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null
+    };
+    this.db.prepare(`
+      INSERT INTO medical_referral
+        (id,referral_no,elderly_id,partner_id,partner_name,service_type,priority,appointment_at,department,doctor,
+         reason,symptoms,escort_required,escort_user_id,escort_user_name,status,partner_confirmed_at,departed_at,
+         consultation_started_at,completed_at,diagnosis,treatment_plan,prescription,next_visit_at,medical_fee_cents,
+         transport_fee_cents,service_fee_cents,total_amount_cents,settlement_status,bill_id,cancel_reason,
+         created_by,created_by_name,remark,created_at,updated_at,deleted_at)
+      VALUES
+        (@id,@referral_no,@elderly_id,@partner_id,@partner_name,@service_type,@priority,@appointment_at,@department,@doctor,
+         @reason,@symptoms,@escort_required,@escort_user_id,@escort_user_name,@status,@partner_confirmed_at,@departed_at,
+         @consultation_started_at,@completed_at,@diagnosis,@treatment_plan,@prescription,@next_visit_at,@medical_fee_cents,
+         @transport_fee_cents,@service_fee_cents,@total_amount_cents,@settlement_status,@bill_id,@cancel_reason,
+         @created_by,@created_by_name,@remark,@created_at,@updated_at,@deleted_at)
+    `).run(row);
+    this.log("medical_referral", "INSERT", row);
+    return row;
+  }
+  confirmReferral(id) {
+    return this.referralTransition(id, ["pending"], "confirmed", { partner_confirmed_at: Date.now() });
+  }
+  departReferral(id) {
+    return this.referralTransition(id, ["confirmed"], "departed", { departed_at: Date.now() });
+  }
+  startConsultation(id) {
+    return this.referralTransition(id, ["departed"], "in_consultation", { consultation_started_at: Date.now() });
+  }
+  completeReferral(id, input) {
+    if (!input.diagnosis.trim()) throw new Error("请填写诊断结果");
+    const referral = this.findReferral(id);
+    if (referral.status !== "in_consultation") throw new Error("就诊中的协作单才能完成");
+    const medical = input.medical_fee_cents ?? 0;
+    const transport = input.transport_fee_cents ?? 0;
+    const service = input.service_fee_cents ?? 0;
+    [["医疗费", medical], ["交通费", transport], ["服务费", service]].forEach(([label, value]) => this.assertCents(value, label));
+    const total = medical + transport + service;
+    const now = Date.now();
+    let billId = null;
+    this.db.transaction(() => {
+      if (input.settlement_method === "monthly_bill" && total > 0) {
+        billId = this.appendMonthlyBill(referral.elderly_id, total, `医养协作 ${referral.referral_no}`, input.diagnosis, now);
+      }
+      this.db.prepare(`
+        UPDATE medical_referral SET status='completed',completed_at=?,diagnosis=?,treatment_plan=?,prescription=?,
+          next_visit_at=?,medical_fee_cents=?,transport_fee_cents=?,service_fee_cents=?,total_amount_cents=?,
+          settlement_status=?,bill_id=?,updated_at=? WHERE id=?
+      `).run(
+        now,
+        input.diagnosis.trim(),
+        input.treatment_plan ?? null,
+        input.prescription ?? null,
+        input.next_visit_at ?? null,
+        medical,
+        transport,
+        service,
+        total,
+        input.settlement_method === "monthly_bill" && total > 0 ? "monthly_bill" : "paid",
+        billId,
+        now,
+        id
+      );
+      const visit = {
+        id: `visit-${referral.id}`,
+        elderly_id: referral.elderly_id,
+        visit_date: new Date(now).toISOString().slice(0, 10),
+        hospital: referral.partner_name,
+        department: referral.department,
+        doctor: referral.doctor,
+        diagnosis: input.diagnosis.trim(),
+        treatment: [input.treatment_plan, input.prescription].filter(Boolean).join("\n") || null,
+        cost: Number((total / 100).toFixed(2)),
+        escort: referral.escort_user_name,
+        remark: `医养协作单 ${referral.referral_no}${referral.remark ? `；${referral.remark}` : ""}`,
+        created_at: now,
+        updated_at: now,
+        deleted_at: null
+      };
+      this.db.prepare(`
+        INSERT INTO medical_visit
+          (id,elderly_id,visit_date,hospital,department,doctor,diagnosis,treatment,cost,escort,remark,created_at,updated_at,deleted_at)
+        VALUES
+          (@id,@elderly_id,@visit_date,@hospital,@department,@doctor,@diagnosis,@treatment,@cost,@escort,@remark,@created_at,@updated_at,@deleted_at)
+      `).run(visit);
+      this.log("medical_visit", "INSERT", visit);
+      this.log("medical_referral", "UPDATE", this.findReferral(id));
+    })();
+    return this.findReferral(id);
+  }
+  cancelReferral(id, reason) {
+    if (!reason.trim()) throw new Error("请填写取消原因");
+    return this.referralTransition(id, ["pending", "confirmed"], "cancelled", { cancel_reason: reason.trim() });
+  }
+  findFollowUps(referralId) {
+    return referralId ? this.db.prepare("SELECT * FROM medical_follow_up WHERE referral_id=? ORDER BY follow_up_at DESC").all(referralId) : this.db.prepare("SELECT * FROM medical_follow_up ORDER BY follow_up_at DESC LIMIT 500").all();
+  }
+  createFollowUp(data) {
+    const referral = this.findReferral(data.referral_id);
+    if (!["completed", "follow_up"].includes(referral.status)) throw new Error("就诊完成后才能记录随访");
+    if (!data.follow_up_at.trim() || !data.condition.trim() || !data.staff_name.trim()) throw new Error("请填写随访时间、情况和随访人");
+    const now = Date.now();
+    const row = { ...data, elderly_id: referral.elderly_id, id: nanoid$1.nanoid(), created_at: now, updated_at: now };
+    this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO medical_follow_up
+          (id,referral_id,elderly_id,follow_up_at,method,condition,medication_compliance,adverse_reaction,
+           next_action,next_follow_up_at,staff_id,staff_name,created_at,updated_at)
+        VALUES
+          (@id,@referral_id,@elderly_id,@follow_up_at,@method,@condition,@medication_compliance,@adverse_reaction,
+           @next_action,@next_follow_up_at,@staff_id,@staff_name,@created_at,@updated_at)
+      `).run(row);
+      this.db.prepare("UPDATE medical_referral SET status='follow_up',updated_at=? WHERE id=?").run(now, referral.id);
+      this.log("medical_follow_up", "INSERT", row);
+      this.log("medical_referral", "UPDATE", this.findReferral(referral.id));
+    })();
+    return row;
+  }
+  getStats() {
+    const month = (/* @__PURE__ */ new Date()).toISOString().slice(0, 7);
+    const purchase = this.db.prepare(`
+      SELECT COUNT(*) total,
+        SUM(CASE WHEN status IN ('pending','assigned','purchasing','delivering','delivered') THEN 1 ELSE 0 END) pending,
+        SUM(CASE WHEN substr(datetime(created_at/1000,'unixepoch','localtime'),1,7)=? AND status!='cancelled' THEN total_amount_cents ELSE 0 END) amount
+      FROM proxy_purchase_order WHERE deleted_at IS NULL
+    `).get(month) ?? { total: 0, pending: 0, amount: 0 };
+    const referral = this.db.prepare(`
+      SELECT COUNT(*) total,
+        SUM(CASE WHEN status IN ('pending','confirmed','departed','in_consultation') THEN 1 ELSE 0 END) pending,
+        SUM(CASE WHEN status='follow_up' THEN 1 ELSE 0 END) follow_up
+      FROM medical_referral WHERE deleted_at IS NULL
+    `).get() ?? { total: 0, pending: 0, follow_up: 0 };
+    const active = this.db.prepare("SELECT COUNT(*) count FROM medical_partner WHERE deleted_at IS NULL AND status='active'").get()?.count ?? 0;
+    return {
+      purchase_total: purchase.total,
+      purchase_pending: purchase.pending ?? 0,
+      purchase_month_amount_cents: purchase.amount ?? 0,
+      referral_total: referral.total,
+      referral_pending: referral.pending ?? 0,
+      referral_follow_up: referral.follow_up ?? 0,
+      active_partners: active
+    };
+  }
+  purchaseTransition(id, from, to, fields) {
+    const order = this.findPurchaseOrder(id);
+    if (!from.includes(order.status)) throw new Error("当前订单状态不允许此操作");
+    const now = Date.now();
+    const keys = Object.keys(fields);
+    this.db.prepare(`UPDATE proxy_purchase_order SET status=@status,${keys.map((key) => `${key}=@${key}`).join(",")},updated_at=@updated_at WHERE id=@id`).run({ ...fields, status: to, updated_at: now, id });
+    const row = this.findPurchaseOrder(id);
+    this.log("proxy_purchase_order", "UPDATE", row);
+    return row;
+  }
+  referralTransition(id, from, to, fields) {
+    const row = this.findReferral(id);
+    if (!from.includes(row.status)) throw new Error("当前就医协作状态不允许此操作");
+    const now = Date.now();
+    const keys = Object.keys(fields);
+    this.db.prepare(`UPDATE medical_referral SET status=@status,${keys.map((key) => `${key}=@${key}`).join(",")},updated_at=@updated_at WHERE id=@id`).run({ ...fields, status: to, updated_at: now, id });
+    const updated = this.findReferral(id);
+    this.log("medical_referral", "UPDATE", updated);
+    return updated;
+  }
+  appendMonthlyBill(elderlyId, amountCents, itemName, remark, now) {
+    const billMonth = new Date(now).toISOString().slice(0, 7);
+    let bill = this.db.prepare(
+      "SELECT id,total FROM monthly_bill WHERE elderly_id=? AND bill_month=? AND deleted_at IS NULL"
+    ).get(elderlyId, billMonth);
+    const amount = Number((amountCents / 100).toFixed(2));
+    if (!bill) {
+      bill = { id: nanoid$1.nanoid(), total: 0 };
+      const billRow = {
+        id: bill.id,
+        elderly_id: elderlyId,
+        bill_month: billMonth,
+        total: 0,
+        paid: 0,
+        status: "unpaid",
+        remark: "代办与医养协作自动归集",
+        created_at: now,
+        updated_at: now,
+        deleted_at: null
+      };
+      this.db.prepare(`INSERT INTO monthly_bill (id,elderly_id,bill_month,total,paid,status,remark,created_at,updated_at,deleted_at)
+        VALUES (@id,@elderly_id,@bill_month,@total,@paid,@status,@remark,@created_at,@updated_at,@deleted_at)`).run(billRow);
+      this.log("monthly_bill", "INSERT", billRow);
+    }
+    const detail = {
+      id: nanoid$1.nanoid(),
+      bill_id: bill.id,
+      elderly_id: elderlyId,
+      fee_item_id: null,
+      item_name: itemName,
+      quantity: 1,
+      unit_price: amount,
+      amount,
+      remark,
+      created_at: now,
+      updated_at: now
+    };
+    this.db.prepare(`INSERT INTO bill_detail (id,bill_id,elderly_id,fee_item_id,item_name,quantity,unit_price,amount,remark,created_at,updated_at)
+      VALUES (@id,@bill_id,@elderly_id,@fee_item_id,@item_name,@quantity,@unit_price,@amount,@remark,@created_at,@updated_at)`).run(detail);
+    this.db.prepare("UPDATE monthly_bill SET total=ROUND(total+?,2),status=CASE WHEN paid>=ROUND(total+?,2) THEN 'paid' WHEN paid>0 THEN 'partial' ELSE 'unpaid' END,updated_at=? WHERE id=?").run(amount, amount, now, bill.id);
+    this.log("bill_detail", "INSERT", detail);
+    const updatedBill = this.db.prepare("SELECT * FROM monthly_bill WHERE id=?").get(bill.id);
+    this.log("monthly_bill", "UPDATE", updatedBill);
+    return bill.id;
+  }
+  assertCents(value, label) {
+    if (!Number.isInteger(value) || value < 0) throw new Error(`${label}必须是非负整数分`);
+  }
+  number(prefix, timestamp) {
+    const date2 = new Date(timestamp);
+    const token = `${date2.getFullYear()}${String(date2.getMonth() + 1).padStart(2, "0")}${String(date2.getDate()).padStart(2, "0")}`;
+    return `${prefix}${token}${String(timestamp).slice(-6)}`;
+  }
+  log(tableName, operation, payload) {
+    const id = String(payload.id ?? "");
+    this.changeLog.insert({ table_name: tableName, record_id: id, operation, payload: JSON.stringify(payload) });
+  }
+}
 const MAX_IMPORT_FILE_SIZE = 2 * 1024 * 1024 * 1024;
 const MAX_IMPORT_ROW_COUNT = 1e6;
 const MAX_MANAGED_BACKUPS = 30;
@@ -4610,6 +5864,12 @@ const REMOTE_SYNC_TABLES = /* @__PURE__ */ new Set([
   "bill_detail",
   "payment_record",
   "invoice",
+  "assisted_service_catalog",
+  "proxy_purchase_order",
+  "proxy_purchase_item",
+  "medical_partner",
+  "medical_referral",
+  "medical_follow_up",
   "meal_menu",
   "meal_record",
   "nutrition_plan",
@@ -5165,7 +6425,9 @@ function createRepos(db2 = getDatabase()) {
     operations: new OperationsRepo(db2),
     supplier: new SupplierRepo(db2),
     purchaseOrder: new PurchaseOrderRepo(db2),
-    chat: new ChatRepo(db2)
+    chat: new ChatRepo(db2),
+    wasteRecycling: new WasteRecyclingRepo(db2),
+    assistedServices: new AssistedServicesRepo(db2)
   };
 }
 class SyncEngine {
@@ -9296,7 +10558,20 @@ const ALLOWED_TABLES$1 = /* @__PURE__ */ new Set([
   "bed",
   "task_reminder",
   "iot_device_alert",
-  "announcement"
+  "announcement",
+  "waste_category",
+  "waste_recycling_order",
+  "waste_recycling_item",
+  "waste_settlement",
+  "waste_points_ledger",
+  "waste_inventory_lot",
+  "waste_inventory_transaction",
+  "assisted_service_catalog",
+  "proxy_purchase_order",
+  "proxy_purchase_item",
+  "medical_partner",
+  "medical_referral",
+  "medical_follow_up"
 ]);
 function quoteIdentifier(name) {
   return `\`${name}\``;
@@ -10399,6 +11674,62 @@ function registerPurchaseHandlers(ipc, supplierRepo, orderRepo) {
     return { ok: true };
   });
 }
+function registerWasteRecyclingHandlers(ipc, repo) {
+  ipc.handle("waste:category:list", (_event, activeOnly) => repo.findCategories(activeOnly));
+  ipc.handle("waste:category:create", (_event, data) => repo.createCategory(data));
+  ipc.handle("waste:category:update", (_event, { id, data }) => repo.updateCategory(id, data));
+  ipc.handle("waste:category:delete", (_event, id) => {
+    repo.deleteCategory(id);
+    return { ok: true };
+  });
+  ipc.handle("waste:order:list", (_event, query) => repo.findOrders(query));
+  ipc.handle("waste:order:get", (_event, id) => repo.findOrder(id));
+  ipc.handle("waste:order:items", (_event, id) => repo.findItems(id));
+  ipc.handle("waste:order:create", (_event, data) => repo.createOrder(data));
+  ipc.handle("waste:order:assign", (_event, { id, assigneeId, assigneeName }) => repo.assign(id, assigneeId, assigneeName));
+  ipc.handle("waste:order:start", (_event, id) => repo.startCollection(id));
+  ipc.handle("waste:order:weigh", (_event, { id, items }) => repo.weigh(id, items));
+  ipc.handle("waste:order:settle", (_event, { id, data }) => repo.settle(id, data));
+  ipc.handle("waste:order:complete", (_event, id) => repo.complete(id));
+  ipc.handle("waste:order:cancel", (_event, { id, reason }) => repo.cancel(id, reason));
+  ipc.handle("waste:settlement:get", (_event, orderId) => repo.findSettlement(orderId));
+  ipc.handle("waste:points:list", (_event, elderlyId) => repo.findPointsLedger(elderlyId));
+  ipc.handle("waste:points:balance", (_event, elderlyId) => repo.getPointsBalance(elderlyId));
+  ipc.handle("waste:inventory:list", (_event, status) => repo.findInventory(status));
+  ipc.handle("waste:inventory:transactions", (_event, lotId) => repo.findInventoryTransactions(lotId));
+  ipc.handle("waste:inventory:transact", (_event, { lotId, data }) => repo.transactInventory(lotId, data));
+  ipc.handle("waste:stats", (_event, { startDate, endDate } = {}) => repo.getStats(startDate, endDate));
+}
+function registerAssistedServicesHandlers(ipc, repo) {
+  ipc.handle("assisted:catalog:list", (_event, activeOnly) => repo.findServiceCatalog(activeOnly));
+  ipc.handle("assisted:catalog:create", (_event, data) => repo.createServiceCatalog(data));
+  ipc.handle("assisted:catalog:update", (_event, { id, data }) => repo.updateServiceCatalog(id, data));
+  ipc.handle("assisted:purchase:list", (_event, query) => repo.findPurchaseOrders(query));
+  ipc.handle("assisted:purchase:get", (_event, id) => repo.findPurchaseOrder(id));
+  ipc.handle("assisted:purchase:items", (_event, id) => repo.findPurchaseItems(id));
+  ipc.handle("assisted:purchase:create", (_event, { order, items }) => repo.createPurchaseOrder(order, items));
+  ipc.handle("assisted:purchase:assign", (_event, { id, assigneeId, assigneeName }) => repo.assignPurchase(id, assigneeId, assigneeName));
+  ipc.handle("assisted:purchase:verify-prescription", (_event, { id, prescriptionNo, verifier }) => repo.verifyPrescription(id, prescriptionNo, verifier));
+  ipc.handle("assisted:purchase:start", (_event, id) => repo.startPurchase(id));
+  ipc.handle("assisted:purchase:deliver", (_event, id) => repo.startDelivery(id));
+  ipc.handle("assisted:purchase:sign", (_event, { id, signedBy }) => repo.signPurchase(id, signedBy));
+  ipc.handle("assisted:purchase:settle", (_event, { id, method }) => repo.settlePurchase(id, method));
+  ipc.handle("assisted:purchase:cancel", (_event, { id, reason }) => repo.cancelPurchase(id, reason));
+  ipc.handle("assisted:partner:list", (_event, activeOnly) => repo.findPartners(activeOnly));
+  ipc.handle("assisted:partner:create", (_event, data) => repo.createPartner(data));
+  ipc.handle("assisted:partner:update", (_event, { id, data }) => repo.updatePartner(id, data));
+  ipc.handle("assisted:referral:list", (_event, query) => repo.findReferrals(query));
+  ipc.handle("assisted:referral:get", (_event, id) => repo.findReferral(id));
+  ipc.handle("assisted:referral:create", (_event, data) => repo.createReferral(data));
+  ipc.handle("assisted:referral:confirm", (_event, id) => repo.confirmReferral(id));
+  ipc.handle("assisted:referral:depart", (_event, id) => repo.departReferral(id));
+  ipc.handle("assisted:referral:consult", (_event, id) => repo.startConsultation(id));
+  ipc.handle("assisted:referral:complete", (_event, { id, data }) => repo.completeReferral(id, data));
+  ipc.handle("assisted:referral:cancel", (_event, { id, reason }) => repo.cancelReferral(id, reason));
+  ipc.handle("assisted:follow-up:list", (_event, referralId) => repo.findFollowUps(referralId));
+  ipc.handle("assisted:follow-up:create", (_event, data) => repo.createFollowUp(data));
+  ipc.handle("assisted:stats", () => repo.getStats());
+}
 function readAppConfig(configPath) {
   try {
     if (fs.existsSync(configPath)) {
@@ -10645,7 +11976,20 @@ const ALLOWED_TABLES = /* @__PURE__ */ new Set([
   "bed",
   "task_reminder",
   "iot_device_alert",
-  "announcement"
+  "announcement",
+  "waste_category",
+  "waste_recycling_order",
+  "waste_recycling_item",
+  "waste_settlement",
+  "waste_points_ledger",
+  "waste_inventory_lot",
+  "waste_inventory_transaction",
+  "assisted_service_catalog",
+  "proxy_purchase_order",
+  "proxy_purchase_item",
+  "medical_partner",
+  "medical_referral",
+  "medical_follow_up"
 ]);
 const LAN_CONFIG_FIELDS = /* @__PURE__ */ new Set(["enabled", "port", "allow_write", "secret"]);
 function readJson(req) {
@@ -11189,6 +12533,8 @@ registerTaskReminderHandlers(electron.ipcMain, repos.taskReminder);
 registerAnnouncementHandlers(electron.ipcMain, repos.announcement);
 registerOperationsHandlers(electron.ipcMain, repos.operations);
 registerPurchaseHandlers(electron.ipcMain, repos.supplier, repos.purchaseOrder);
+registerWasteRecyclingHandlers(electron.ipcMain, repos.wasteRecycling);
+registerAssistedServicesHandlers(electron.ipcMain, repos.assistedServices);
 registerChatHandlers(electron.ipcMain, repos.syncConfig, repos.chat, repos.user, appConfigPath);
 registerDbHandlers(
   electron.ipcMain,

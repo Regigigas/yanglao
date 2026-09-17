@@ -1511,6 +1511,238 @@ export const migrations: Migration[] = [
     const columns = db.prepare(`PRAGMA table_info(invoice)`).all() as Array<{ name: string }>;
     if (!columns.some(column => column.name === 'applicant')) db.exec(`ALTER TABLE invoice ADD COLUMN applicant TEXT;`);
   } },
+  {
+    version: 37,
+    description: '创建废品回收全流程、结算积分与库存台账',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS waste_category (
+          id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'kg',
+          guide_price_cents INTEGER NOT NULL DEFAULT 0, points_per_unit INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'active', sort_order INTEGER NOT NULL DEFAULT 0, remark TEXT,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_recycling_order (
+          id TEXT PRIMARY KEY, order_no TEXT NOT NULL UNIQUE, source_type TEXT NOT NULL DEFAULT 'other',
+          elderly_id TEXT, contact_name TEXT NOT NULL, contact_phone TEXT, pickup_type TEXT NOT NULL DEFAULT 'pickup',
+          pickup_address TEXT, appointment_at TEXT NOT NULL, estimated_weight REAL, total_weight REAL NOT NULL DEFAULT 0,
+          total_amount_cents INTEGER NOT NULL DEFAULT 0, points INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending', assignee_id TEXT, assignee_name TEXT, assigned_at INTEGER,
+          collected_at INTEGER, weighed_at INTEGER, settled_at INTEGER, completed_at INTEGER, cancel_reason TEXT,
+          created_by TEXT, created_by_name TEXT, remark TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_recycling_item (
+          id TEXT PRIMARY KEY, order_id TEXT NOT NULL, category_id TEXT NOT NULL, category_name TEXT NOT NULL,
+          material_name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'kg', gross_weight REAL NOT NULL DEFAULT 0,
+          tare_weight REAL NOT NULL DEFAULT 0, net_weight REAL NOT NULL DEFAULT 0,
+          unit_price_cents INTEGER NOT NULL DEFAULT 0, amount_cents INTEGER NOT NULL DEFAULT 0,
+          quality_grade TEXT NOT NULL DEFAULT 'normal', remark TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_settlement (
+          id TEXT PRIMARY KEY, settlement_no TEXT NOT NULL UNIQUE, order_id TEXT NOT NULL UNIQUE,
+          method TEXT NOT NULL, cash_amount_cents INTEGER NOT NULL DEFAULT 0, points INTEGER NOT NULL DEFAULT 0,
+          payee TEXT, operator TEXT, settled_at INTEGER NOT NULL, remark TEXT, created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_points_ledger (
+          id TEXT PRIMARY KEY, elderly_id TEXT NOT NULL, order_id TEXT, change_points INTEGER NOT NULL,
+          reason TEXT NOT NULL, operator TEXT, occurred_at INTEGER NOT NULL, created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_inventory_lot (
+          id TEXT PRIMARY KEY, order_id TEXT NOT NULL, item_id TEXT NOT NULL UNIQUE, category_id TEXT NOT NULL,
+          material_name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'kg', quantity REAL NOT NULL,
+          remaining_quantity REAL NOT NULL, cost_amount_cents INTEGER NOT NULL DEFAULT 0, storage_location TEXT,
+          status TEXT NOT NULL DEFAULT 'in_stock', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS waste_inventory_transaction (
+          id TEXT PRIMARY KEY, lot_id TEXT NOT NULL, transaction_type TEXT NOT NULL, quantity REAL NOT NULL,
+          destination TEXT, counterparty TEXT, unit_price_cents INTEGER NOT NULL DEFAULT 0,
+          amount_cents INTEGER NOT NULL DEFAULT 0, operator TEXT, occurred_at TEXT NOT NULL,
+          remark TEXT, created_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_waste_category_status ON waste_category(status, sort_order);
+        CREATE INDEX IF NOT EXISTS idx_waste_order_status ON waste_recycling_order(status, appointment_at);
+        CREATE INDEX IF NOT EXISTS idx_waste_order_elderly ON waste_recycling_order(elderly_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_waste_item_order ON waste_recycling_item(order_id);
+        CREATE INDEX IF NOT EXISTS idx_waste_settlement_order ON waste_settlement(order_id);
+        CREATE INDEX IF NOT EXISTS idx_waste_points_elderly ON waste_points_ledger(elderly_id, occurred_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_waste_inventory_status ON waste_inventory_lot(status, material_name);
+        CREATE INDEX IF NOT EXISTS idx_waste_inventory_tx_lot ON waste_inventory_transaction(lot_id, created_at DESC);
+      `);
+
+      const now = Date.now();
+      const insertCategory = db.prepare(`
+        INSERT OR IGNORE INTO waste_category
+          (id,code,name,unit,guide_price_cents,points_per_unit,status,sort_order,remark,created_at,updated_at,deleted_at)
+        VALUES (@id,@code,@name,'kg',@guide_price_cents,@points_per_unit,'active',@sort_order,NULL,@created_at,@updated_at,NULL)
+      `);
+      [
+        ['waste-paper', 'paper', '废纸', 80, 1, 10],
+        ['waste-plastic', 'plastic', '塑料', 120, 1, 20],
+        ['waste-metal', 'metal', '金属', 350, 3, 30],
+        ['waste-glass', 'glass', '玻璃', 20, 0, 40],
+        ['waste-textile', 'textile', '旧衣纺织物', 50, 1, 50],
+        ['waste-appliance', 'appliance', '废旧家电', 100, 2, 60],
+        ['waste-hazardous', 'hazardous', '有害废弃物', 0, 0, 70],
+        ['waste-other', 'other', '其他', 0, 0, 99],
+      ].forEach(([id, code, name, guide_price_cents, points_per_unit, sort_order]) =>
+        insertCategory.run({ id, code, name, guide_price_cents, points_per_unit, sort_order, created_at: now, updated_at: now }),
+      );
+
+      const addMenu = (table: 'sys_role' | 'sys_permission_group'): void => {
+        const rows = db.prepare(`SELECT id, menu_keys FROM ${table}`).all() as Array<{ id: string; menu_keys: string }>;
+        const update = db.prepare(`UPDATE ${table} SET menu_keys=?, updated_at=? WHERE id=?`);
+        for (const row of rows) {
+          let keys: string[] = [];
+          try { keys = JSON.parse(row.menu_keys) as string[]; } catch { keys = []; }
+          if (!keys.includes('*') && !keys.includes('waste-recycling')) {
+            update.run(JSON.stringify([...keys, 'waste-recycling']), now, row.id);
+          }
+        }
+      };
+      addMenu('sys_role');
+      addMenu('sys_permission_group');
+    },
+  },
+  {
+    version: 38,
+    description: '创建代买服务、医疗合作机构、陪诊转诊与随访闭环',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS proxy_purchase_order (
+          id TEXT PRIMARY KEY, order_no TEXT NOT NULL UNIQUE, elderly_id TEXT NOT NULL,
+          category TEXT NOT NULL, requester_name TEXT NOT NULL, requester_phone TEXT,
+          merchant_name TEXT, delivery_address TEXT NOT NULL, expected_at TEXT,
+          goods_amount_cents INTEGER NOT NULL DEFAULT 0, delivery_fee_cents INTEGER NOT NULL DEFAULT 0,
+          service_fee_cents INTEGER NOT NULL DEFAULT 0, total_amount_cents INTEGER NOT NULL DEFAULT 0,
+          advance_amount_cents INTEGER NOT NULL DEFAULT 0, prescription_required INTEGER NOT NULL DEFAULT 0,
+          prescription_no TEXT, prescription_verified_by TEXT, prescription_verified_at INTEGER,
+          status TEXT NOT NULL DEFAULT 'pending', assignee_id TEXT, assignee_name TEXT, assigned_at INTEGER,
+          purchased_at INTEGER, delivery_started_at INTEGER, delivered_at INTEGER, signed_by TEXT, signed_at INTEGER,
+          settlement_method TEXT, settlement_status TEXT NOT NULL DEFAULT 'unsettled', bill_id TEXT,
+          settled_at INTEGER, cancel_reason TEXT, created_by TEXT, created_by_name TEXT, remark TEXT,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS proxy_purchase_item (
+          id TEXT PRIMARY KEY, order_id TEXT NOT NULL, item_name TEXT NOT NULL, specification TEXT,
+          quantity REAL NOT NULL, unit TEXT NOT NULL DEFAULT '件', unit_price_cents INTEGER NOT NULL DEFAULT 0,
+          amount_cents INTEGER NOT NULL DEFAULT 0, medicine_type TEXT, dosage TEXT, remark TEXT,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS medical_partner (
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, partner_type TEXT NOT NULL, hospital_level TEXT,
+          specialties TEXT, contact_name TEXT, contact_phone TEXT, address TEXT, emergency_channel TEXT,
+          agreement_no TEXT, agreement_start TEXT, agreement_end TEXT, settlement_cycle TEXT,
+          status TEXT NOT NULL DEFAULT 'active', remark TEXT, created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL, deleted_at INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS medical_referral (
+          id TEXT PRIMARY KEY, referral_no TEXT NOT NULL UNIQUE, elderly_id TEXT NOT NULL,
+          partner_id TEXT NOT NULL, partner_name TEXT NOT NULL, service_type TEXT NOT NULL,
+          priority TEXT NOT NULL DEFAULT 'normal', appointment_at TEXT NOT NULL, department TEXT,
+          doctor TEXT, reason TEXT NOT NULL, symptoms TEXT, escort_required INTEGER NOT NULL DEFAULT 0,
+          escort_user_id TEXT, escort_user_name TEXT, status TEXT NOT NULL DEFAULT 'pending',
+          partner_confirmed_at INTEGER, departed_at INTEGER, consultation_started_at INTEGER,
+          completed_at INTEGER, diagnosis TEXT, treatment_plan TEXT, prescription TEXT, next_visit_at TEXT,
+          medical_fee_cents INTEGER NOT NULL DEFAULT 0, transport_fee_cents INTEGER NOT NULL DEFAULT 0,
+          service_fee_cents INTEGER NOT NULL DEFAULT 0, total_amount_cents INTEGER NOT NULL DEFAULT 0,
+          settlement_status TEXT NOT NULL DEFAULT 'unpaid', bill_id TEXT, cancel_reason TEXT,
+          created_by TEXT, created_by_name TEXT, remark TEXT, created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL, deleted_at INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS medical_follow_up (
+          id TEXT PRIMARY KEY, referral_id TEXT NOT NULL, elderly_id TEXT NOT NULL, follow_up_at TEXT NOT NULL,
+          method TEXT NOT NULL, condition TEXT NOT NULL, medication_compliance TEXT, adverse_reaction TEXT,
+          next_action TEXT, next_follow_up_at TEXT, staff_id TEXT, staff_name TEXT NOT NULL,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_proxy_purchase_status ON proxy_purchase_order(status, expected_at);
+        CREATE INDEX IF NOT EXISTS idx_proxy_purchase_elderly ON proxy_purchase_order(elderly_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_proxy_purchase_item_order ON proxy_purchase_item(order_id);
+        CREATE INDEX IF NOT EXISTS idx_medical_partner_status ON medical_partner(status, partner_type);
+        CREATE INDEX IF NOT EXISTS idx_medical_referral_status ON medical_referral(status, appointment_at);
+        CREATE INDEX IF NOT EXISTS idx_medical_referral_elderly ON medical_referral(elderly_id, appointment_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_medical_follow_up_referral ON medical_follow_up(referral_id, follow_up_at DESC);
+      `);
+
+      const now = Date.now();
+      const addMenu = (table: 'sys_role' | 'sys_permission_group'): void => {
+        const rows = db.prepare(`SELECT id, menu_keys FROM ${table}`).all() as Array<{ id: string; menu_keys: string }>;
+        const update = db.prepare(`UPDATE ${table} SET menu_keys=?, updated_at=? WHERE id=?`);
+        for (const row of rows) {
+          let keys: string[] = [];
+          try { keys = JSON.parse(row.menu_keys) as string[]; } catch { keys = []; }
+          if (!keys.includes('*') && !keys.includes('assisted-services')) {
+            update.run(JSON.stringify([...keys, 'assisted-services']), now, row.id);
+          }
+        }
+      };
+      addMenu('sys_role');
+      addMenu('sys_permission_group');
+    },
+  },
+  {
+    version: 39,
+    description: '增加快递代拿及代办服务免费固定和自定义收费配置',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS assisted_service_catalog (
+          id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, category TEXT NOT NULL,
+          charge_mode TEXT NOT NULL DEFAULT 'custom', default_service_fee_cents INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'active', sort_order INTEGER NOT NULL DEFAULT 0, remark TEXT,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_assisted_service_catalog_status
+          ON assisted_service_catalog(status, sort_order);
+        ALTER TABLE proxy_purchase_order ADD COLUMN service_catalog_id TEXT;
+        ALTER TABLE proxy_purchase_order ADD COLUMN charge_mode TEXT NOT NULL DEFAULT 'custom';
+      `);
+
+      const now = Date.now();
+      const insert = db.prepare(`
+        INSERT OR IGNORE INTO assisted_service_catalog
+          (id,code,name,category,charge_mode,default_service_fee_cents,status,sort_order,remark,created_at,updated_at,deleted_at)
+        VALUES
+          (@id,@code,@name,@category,@charge_mode,@default_service_fee_cents,'active',@sort_order,@remark,@created_at,@updated_at,NULL)
+      `);
+      [
+        ['service-takeaway', 'takeaway', '外卖代买', 'takeaway', 'custom', 0, 10, '餐食下单、取餐和配送'],
+        ['service-medicine', 'medicine', '药品代买', 'medicine', 'custom', 0, 20, '处方药购买前必须核验处方'],
+        ['service-daily-goods', 'daily_goods', '生活用品代买', 'daily_goods', 'custom', 0, 30, '日用品、食品等代买'],
+        ['service-package', 'package_pickup', '代拿快递', 'package_pickup', 'free', 0, 40, '快递站取件并送达老人'],
+        ['service-errand', 'errand', '其他跑腿', 'errand', 'custom', 0, 50, '其他可派单代办事项'],
+      ].forEach(([id, code, name, category, charge_mode, default_service_fee_cents, sort_order, remark]) =>
+        insert.run({ id, code, name, category, charge_mode, default_service_fee_cents, sort_order, remark, created_at: now, updated_at: now }),
+      );
+    },
+  },
+  {
+    version: 40,
+    description: '开放人体经络与解剖三维教学菜单',
+    up: (db) => {
+      const now = Date.now();
+      const addMenu = (table: 'sys_role' | 'sys_permission_group'): void => {
+        const rows = db.prepare(`SELECT id, menu_keys FROM ${table}`).all() as Array<{ id: string; menu_keys: string }>;
+        const update = db.prepare(`UPDATE ${table} SET menu_keys=?, updated_at=? WHERE id=?`);
+        for (const row of rows) {
+          let keys: string[] = [];
+          try { keys = JSON.parse(row.menu_keys) as string[]; } catch { keys = []; }
+          if (!keys.includes('*') && !keys.includes('human-meridian')) {
+            update.run(JSON.stringify([...keys, 'human-meridian']), now, row.id);
+          }
+        }
+      };
+      addMenu('sys_role');
+      addMenu('sys_permission_group');
+    },
+  },
 ];
 
 /**

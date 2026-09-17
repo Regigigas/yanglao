@@ -43,6 +43,13 @@ const meridianData: MeridianInfo[] = [
   { id: 'du', name: '督脉', pinyin: 'Dū Mài', category: '奇经八脉', overview: '奇经八脉之一，主干行于人体后正中线，传统理论称为“阳脉之海”。', route: '起于胞中，下出会阴，沿脊柱后正中线上行，经项部进入脑内，再越过头顶沿额面下降至上唇。', reference: '传统经络理论中具有总督诸阳经、调节阳经气血的概括性作用。', acupoints: ['长强', '命门', '大椎', '百会', '水沟'] },
 ];
 
+const meridianAliases: Record<string, string> = {
+  lung: '肺经 · LU', 'large-intestine': '大肠经 · LI', stomach: '胃经 · ST', spleen: '脾经 · SP',
+  heart: '心经 · HT', 'small-intestine': '小肠经 · SI', bladder: '膀胱经 · BL', kidney: '肾经 · KI',
+  pericardium: '心包经 · PC', 'triple-burner': '三焦经 · SJ', gallbladder: '胆经 · GB', liver: '肝经 · LR',
+  ren: '任脉 · CV', du: '督脉 · GV',
+};
+
 const anatomyData: AnatomyInfo[] = [
   { id: 'brain', name: '脑', system: '神经系统', description: '位于颅腔内，是中枢神经系统的主要部分。' },
   { id: 'heart', name: '心脏', system: '循环系统', description: '位于胸腔中纵隔，负责推动血液循环。' },
@@ -64,7 +71,6 @@ const showMuscles = ref(false);
 const showSkeleton = ref(false);
 const showOrgans = ref(false);
 const showMeridians = ref(true);
-const flowSpeed = ref(1);
 const activeInfoTab = ref('meridian');
 const selected = ref<Human3DSelection>({ id: 'ren', name: '任脉', kind: 'meridian' });
 
@@ -101,6 +107,7 @@ function applyMode(mode: 'meridian' | 'anatomy' | 'muscle' | 'combined') {
     showSkin.value = true; showMuscles.value = false; showSkeleton.value = true; showOrgans.value = true; showMeridians.value = true;
   }
 }
+
 </script>
 
 <template>
@@ -110,21 +117,10 @@ function applyMode(mode: 'meridian' | 'anatomy' | 'muscle' | 'combined') {
   >
     <template #actions>
       <NButtonGroup>
-        <NButton @click="applyMode('meridian')">
-          经络铜人
-        </NButton>
-        <NButton @click="applyMode('anatomy')">
-          解剖模式
-        </NButton>
-        <NButton @click="applyMode('muscle')">
-          肌肉骨骼
-        </NButton>
-        <NButton
-          type="primary"
-          @click="applyMode('combined')"
-        >
-          综合显示
-        </NButton>
+        <NButton @click="applyMode('meridian')">经络铜人</NButton>
+        <NButton @click="applyMode('anatomy')">解剖模式</NButton>
+        <NButton @click="applyMode('muscle')">肌肉骨骼</NButton>
+        <NButton type="primary" @click="applyMode('combined')">综合显示</NButton>
       </NButtonGroup>
     </template>
 
@@ -140,61 +136,21 @@ function applyMode(mode: 'meridian' | 'anatomy' | 'muscle' | 'combined') {
           class="side-card"
         >
           <NSpace vertical>
-            <NCheckbox v-model:checked="showSkin">
-              半透明皮肤
-            </NCheckbox>
-            <NCheckbox v-model:checked="showMuscles">
-              肌肉层
-            </NCheckbox>
-            <NCheckbox v-model:checked="showSkeleton">
-              骨骼层
-            </NCheckbox>
-            <NCheckbox v-model:checked="showOrgans">
-              主要脏器
-            </NCheckbox>
+            <NCheckbox v-model:checked="showSkin">半透明皮肤</NCheckbox>
+            <NCheckbox v-model:checked="showMuscles">肌肉层</NCheckbox>
+            <NCheckbox v-model:checked="showSkeleton">骨骼层</NCheckbox>
+            <NCheckbox v-model:checked="showOrgans">主要脏器</NCheckbox>
             <NCheckbox v-model:checked="showMeridians">
-              经络流动
+              显示经络
             </NCheckbox>
           </NSpace>
           <NDivider />
-          <div class="control-label">
-            经络流速
-          </div>
-          <NSlider
-            v-model:value="flowSpeed"
-            :min="0.2"
-            :max="3"
-            :step="0.1"
-          />
-          <NDivider />
-          <div class="control-label">
-            观察方向
-          </div>
+          <div class="control-label">观察方向</div>
           <NSpace>
-            <NButton
-              size="small"
-              @click="viewer?.setView('front')"
-            >
-              正面
-            </NButton>
-            <NButton
-              size="small"
-              @click="viewer?.setView('back')"
-            >
-              背面
-            </NButton>
-            <NButton
-              size="small"
-              @click="viewer?.setView('left')"
-            >
-              左侧
-            </NButton>
-            <NButton
-              size="small"
-              @click="viewer?.setView('right')"
-            >
-              右侧
-            </NButton>
+            <NButton size="small" @click="viewer?.setView('front')">正面</NButton>
+            <NButton size="small" @click="viewer?.setView('back')">背面</NButton>
+            <NButton size="small" @click="viewer?.setView('left')">左侧</NButton>
+            <NButton size="small" @click="viewer?.setView('right')">右侧</NButton>
           </NSpace>
           <NDivider />
           <NTabs
@@ -221,7 +177,7 @@ function applyMode(mode: 'meridian' | 'anatomy' | 'muscle' | 'combined') {
                     {{ item.name }}
                   </div>
                   <div class="list-pinyin">
-                    {{ item.pinyin }}
+                    {{ item.pinyin }} · {{ meridianAliases[item.id] }}
                   </div>
                   <NTag
                     size="tiny"
@@ -271,7 +227,6 @@ function applyMode(mode: 'meridian' | 'anatomy' | 'muscle' | 'combined') {
           :show-skeleton="showSkeleton"
           :show-organs="showOrgans"
           :show-meridians="showMeridians"
-          :flow-speed="flowSpeed"
           :selected-id="selected.id"
           @select="selectItem"
         />

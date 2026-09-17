@@ -19,7 +19,10 @@ const ALLOWED_TABLES = new Set([
   'fee_item', 'deposit_record', 'monthly_bill', 'bill_detail', 'payment_record', 'invoice',
   'meal_menu', 'meal_record', 'nutrition_plan', 'activity', 'activity_attendance',
   'contract', 'building', 'room', 'bed',
-   'task_reminder', 'iot_device_alert', 'announcement',
+  'task_reminder', 'iot_device_alert', 'announcement',
+  'waste_category', 'waste_recycling_order', 'waste_recycling_item', 'waste_settlement',
+  'waste_points_ledger', 'waste_inventory_lot', 'waste_inventory_transaction',
+  'assisted_service_catalog', 'proxy_purchase_order', 'proxy_purchase_item', 'medical_partner', 'medical_referral', 'medical_follow_up',
 ])
 const LAN_CONFIG_FIELDS = new Set(['enabled', 'port', 'allow_write', 'secret'])
 

@@ -41,6 +41,8 @@ import {
 import { registerAnnouncementHandlers } from './ipc/announcement.handler';
 import { registerOperationsHandlers } from './ipc/operations.handler';
 import { registerPurchaseHandlers } from './ipc/purchase.handler';
+import { registerWasteRecyclingHandlers } from './ipc/waste-recycling.handler';
+import { registerAssistedServicesHandlers } from './ipc/assisted-services.handler';
 import { registerDbHandlers, readAppConfig } from './ipc/db.handler';
 import { registerChatHandlers } from './ipc/chat.handler';
 import { session as authSession } from './ipc/auth.handler';
@@ -232,6 +234,8 @@ registerTaskReminderHandlers(ipcMain, repos.taskReminder);
 registerAnnouncementHandlers(ipcMain, repos.announcement);
 registerOperationsHandlers(ipcMain, repos.operations);
 registerPurchaseHandlers(ipcMain, repos.supplier, repos.purchaseOrder);
+registerWasteRecyclingHandlers(ipcMain, repos.wasteRecycling);
+registerAssistedServicesHandlers(ipcMain, repos.assistedServices);
 registerChatHandlers(ipcMain, repos.syncConfig, repos.chat, repos.user, appConfigPath);
 registerDbHandlers(
   ipcMain,

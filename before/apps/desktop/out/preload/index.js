@@ -443,6 +443,81 @@ const api = {
       stats: () => electron.ipcRenderer.invoke("purchase:order:stats")
     }
   },
+  // ── 废品回收 ─────────────────────────────────────────────────
+  wasteRecycling: {
+    category: {
+      list: (activeOnly) => electron.ipcRenderer.invoke("waste:category:list", activeOnly),
+      create: (data) => electron.ipcRenderer.invoke("waste:category:create", data),
+      update: (id, data) => electron.ipcRenderer.invoke("waste:category:update", { id, data }),
+      delete: (id) => electron.ipcRenderer.invoke("waste:category:delete", id)
+    },
+    order: {
+      list: (query) => electron.ipcRenderer.invoke("waste:order:list", query),
+      get: (id) => electron.ipcRenderer.invoke("waste:order:get", id),
+      items: (id) => electron.ipcRenderer.invoke("waste:order:items", id),
+      create: (data) => electron.ipcRenderer.invoke("waste:order:create", data),
+      assign: (id, assigneeId, assigneeName) => electron.ipcRenderer.invoke("waste:order:assign", { id, assigneeId, assigneeName }),
+      start: (id) => electron.ipcRenderer.invoke("waste:order:start", id),
+      weigh: (id, items) => electron.ipcRenderer.invoke("waste:order:weigh", { id, items }),
+      settle: (id, data) => electron.ipcRenderer.invoke("waste:order:settle", { id, data }),
+      complete: (id) => electron.ipcRenderer.invoke("waste:order:complete", id),
+      cancel: (id, reason) => electron.ipcRenderer.invoke("waste:order:cancel", { id, reason })
+    },
+    settlement: {
+      get: (orderId) => electron.ipcRenderer.invoke("waste:settlement:get", orderId)
+    },
+    points: {
+      list: (elderlyId) => electron.ipcRenderer.invoke("waste:points:list", elderlyId),
+      balance: (elderlyId) => electron.ipcRenderer.invoke("waste:points:balance", elderlyId)
+    },
+    inventory: {
+      list: (status) => electron.ipcRenderer.invoke("waste:inventory:list", status),
+      transactions: (lotId) => electron.ipcRenderer.invoke("waste:inventory:transactions", lotId),
+      transact: (lotId, data) => electron.ipcRenderer.invoke("waste:inventory:transact", { lotId, data })
+    },
+    stats: (startDate, endDate) => electron.ipcRenderer.invoke("waste:stats", { startDate, endDate })
+  },
+  // ── 代办与医养协作 ───────────────────────────────────────────
+  assistedServices: {
+    catalog: {
+      list: (activeOnly) => electron.ipcRenderer.invoke("assisted:catalog:list", activeOnly),
+      create: (data) => electron.ipcRenderer.invoke("assisted:catalog:create", data),
+      update: (id, data) => electron.ipcRenderer.invoke("assisted:catalog:update", { id, data })
+    },
+    purchase: {
+      list: (query) => electron.ipcRenderer.invoke("assisted:purchase:list", query),
+      get: (id) => electron.ipcRenderer.invoke("assisted:purchase:get", id),
+      items: (id) => electron.ipcRenderer.invoke("assisted:purchase:items", id),
+      create: (order, items) => electron.ipcRenderer.invoke("assisted:purchase:create", { order, items }),
+      assign: (id, assigneeId, assigneeName) => electron.ipcRenderer.invoke("assisted:purchase:assign", { id, assigneeId, assigneeName }),
+      verifyPrescription: (id, prescriptionNo, verifier) => electron.ipcRenderer.invoke("assisted:purchase:verify-prescription", { id, prescriptionNo, verifier }),
+      start: (id) => electron.ipcRenderer.invoke("assisted:purchase:start", id),
+      deliver: (id) => electron.ipcRenderer.invoke("assisted:purchase:deliver", id),
+      sign: (id, signedBy) => electron.ipcRenderer.invoke("assisted:purchase:sign", { id, signedBy }),
+      settle: (id, method) => electron.ipcRenderer.invoke("assisted:purchase:settle", { id, method }),
+      cancel: (id, reason) => electron.ipcRenderer.invoke("assisted:purchase:cancel", { id, reason })
+    },
+    partner: {
+      list: (activeOnly) => electron.ipcRenderer.invoke("assisted:partner:list", activeOnly),
+      create: (data) => electron.ipcRenderer.invoke("assisted:partner:create", data),
+      update: (id, data) => electron.ipcRenderer.invoke("assisted:partner:update", { id, data })
+    },
+    referral: {
+      list: (query) => electron.ipcRenderer.invoke("assisted:referral:list", query),
+      get: (id) => electron.ipcRenderer.invoke("assisted:referral:get", id),
+      create: (data) => electron.ipcRenderer.invoke("assisted:referral:create", data),
+      confirm: (id) => electron.ipcRenderer.invoke("assisted:referral:confirm", id),
+      depart: (id) => electron.ipcRenderer.invoke("assisted:referral:depart", id),
+      consult: (id) => electron.ipcRenderer.invoke("assisted:referral:consult", id),
+      complete: (id, data) => electron.ipcRenderer.invoke("assisted:referral:complete", { id, data }),
+      cancel: (id, reason) => electron.ipcRenderer.invoke("assisted:referral:cancel", { id, reason })
+    },
+    followUp: {
+      list: (referralId) => electron.ipcRenderer.invoke("assisted:follow-up:list", referralId),
+      create: (data) => electron.ipcRenderer.invoke("assisted:follow-up:create", data)
+    },
+    stats: () => electron.ipcRenderer.invoke("assisted:stats")
+  },
   // ── 数据库文件路径配置 ─────────────────────────────────────────
   db: {
     getPath: () => electron.ipcRenderer.invoke("db:get-path"),
