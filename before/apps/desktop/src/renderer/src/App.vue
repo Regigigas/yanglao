@@ -2,12 +2,8 @@
   import { NConfigProvider, NMessageProvider, NDialogProvider, NNotificationProvider, NGlobalStyle } from 'naive-ui'
   import { RouterView } from 'vue-router'
   import { useTheme } from '@yanglao/ui'
-  import { useSyncStore } from './stores/sync.store'
 
   const { naiveTheme } = useTheme()
-  const syncStore = useSyncStore()
-  // 初始化同步状态监听（监听主进程推送的同步事件）
-  syncStore.initListener()
 </script>
 
 <template>

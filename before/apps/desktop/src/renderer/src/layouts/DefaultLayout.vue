@@ -158,7 +158,11 @@
     await notifyStore.markUnread(id);
   }
 
-  onMounted(() => notifyStore.fetchUnreadCount());
+  onMounted(() => {
+    notifyStore.fetchUnreadCount();
+    // 同步接口受主进程登录态保护，只在进入已鉴权的主布局后再初始化。
+    syncStore.initListener();
+  });
 
   // ── 自动刷新定时器初始化（读取用户配置的间隔秒数） ──────────────
   onMounted(async () => {
@@ -237,6 +241,7 @@
   });
   onUnmounted(() => {
     offAlarm?.();
+    syncStore.destroyListener();
   });
 
   // 页签：进入 DefaultLayout 子路由时记录页签，并按需加入 KeepAlive 缓存名单
