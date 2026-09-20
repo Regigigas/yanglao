@@ -142,6 +142,12 @@ export const MENU_CATALOG: MenuCatalogItem[] = [
     icon: 'MedicalFiles',
     group: 'business',
   },
+  {
+    key: 'purchase',
+    label: '采购管理',
+    icon: 'ShoppingCart',
+    group: 'business',
+  },
 
   {
     key: 'clock',

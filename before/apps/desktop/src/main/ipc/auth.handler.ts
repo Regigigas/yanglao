@@ -35,16 +35,20 @@ function toSafeUser(user: UserRow) {
 
 export function registerAuthHandlers(ipc: IpcMain, userRepo: UserRepo): void {
   ipc.handle('auth:login', (_e, { username, password, remember }: { username: string; password: string; remember?: boolean }) => {
+    if (typeof username !== 'string' || !username.trim() || typeof password !== 'string' || !password) {
+      return { ok: false, error: '请输入用户名和密码' }
+    }
     const user = userRepo.verifyLogin(username, password)
     if (!user) return { ok: false, error: '用户名或密码错误' }
     userRepo.recordLogin(user.id)
-    session.user = user
+    // 登录时间已更新，重新读取以保证渲染进程拿到的用户信息和数据库一致。
+    session.user = userRepo.findUserById(user.id) ?? user
     if (remember) {
       savePersistedSession(user.id, REMEMBER_TTL_MS)
     } else {
       clearPersistedSession()
     }
-    return { ok: true, user: toSafeUser(user) }
+    return { ok: true, user: toSafeUser(session.user) }
   })
 
   ipc.handle('auth:logout', () => {
@@ -65,7 +69,7 @@ export function registerAuthHandlers(ipc: IpcMain, userRepo: UserRepo): void {
     const persisted = loadPersistedSession()
     if (!persisted) return null
     const user = userRepo.findUserById(persisted.userId)
-    if (!user || user.status !== 'active') {
+    if (!user || user.status !== 'active' || user.deleted_at !== null) {
       clearPersistedSession()
       return null
     }
@@ -74,11 +78,21 @@ export function registerAuthHandlers(ipc: IpcMain, userRepo: UserRepo): void {
   })
 
   ipc.handle('auth:change-password', (_e, { oldPassword, newPassword }: { oldPassword: string; newPassword: string }) => {
-    if (!session.user) return { ok: false, error: '未登录' }
-    const ok = userRepo.verifyLogin(session.user.username, oldPassword)
+    let currentUser: UserRow
+    try {
+      currentUser = requireActiveUser(userRepo)
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : '未登录' }
+    }
+    if (typeof oldPassword !== 'string') return { ok: false, error: '原密码无效' }
+    if (typeof newPassword !== 'string' || newPassword.length < 6 || newPassword.length > 128) {
+      return { ok: false, error: '新密码长度应为 6 到 128 位' }
+    }
+    if (newPassword === oldPassword) return { ok: false, error: '新密码不能与原密码相同' }
+    const ok = userRepo.verifyLogin(currentUser.username, oldPassword)
     if (!ok) return { ok: false, error: '原密码不正确' }
-    userRepo.setPassword(session.user.id, newPassword, false)
-    session.user = userRepo.findUserById(session.user.id)
+    userRepo.setPassword(currentUser.id, newPassword, false)
+    session.user = userRepo.findUserById(currentUser.id)
     return { ok: true }
   })
 }

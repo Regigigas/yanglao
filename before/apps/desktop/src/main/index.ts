@@ -45,7 +45,7 @@ import { registerWasteRecyclingHandlers } from './ipc/waste-recycling.handler';
 import { registerAssistedServicesHandlers } from './ipc/assisted-services.handler';
 import { registerDbHandlers, readAppConfig } from './ipc/db.handler';
 import { registerChatHandlers } from './ipc/chat.handler';
-import { session as authSession } from './ipc/auth.handler';
+import { requireActiveUser, session as authSession } from './ipc/auth.handler';
 import { LanServer } from './lan-server';
 import { nanoid } from 'nanoid';
 import cron from 'node-cron';
@@ -211,34 +211,45 @@ function createWindow(): void {
 }
 
 // ── 注册所有 IPC 处理器 ──────────────────────────────────────
-registerSyncHandlers(ipcMain, scheduler, repos.syncConfig);
-registerElderlyHandlers(ipcMain, repos.elderly);
-registerConfigHandlers(ipcMain, repos.syncConfig, scheduler);
-registerBuildingHandlers(ipcMain, repos.building);
-registerFamilyContactHandlers(ipcMain, repos.familyContact);
-registerHealthHandlers(ipcMain, repos.health);
-registerAdmissionHandlers(ipcMain, repos.admission);
-registerCareHandlers(ipcMain, repos.care);
-registerFeeHandlers(ipcMain, repos.fee);
-registerMealHandlers(ipcMain, repos.meal);
-registerActivityHandlers(ipcMain, repos.activity);
-registerContractHandlers(ipcMain, repos.contract);
-registerNotificationHandlers(ipcMain, repos.notification);
-registerLanHandlers(ipcMain, lanServer, repos.user);
+// 业务接口必须在主进程再校验一次登录状态。路由守卫和按钮隐藏只属于
+// 渲染层体验，不能作为 Electron IPC 的安全边界。
 registerAuthHandlers(ipcMain, repos.user);
-registerUserHandlers(ipcMain, repos.user);
-registerAttendanceHandlers(ipcMain, repos.attendance);
-registerIotHandlers(ipcMain, repos.iot, repos.taskReminder);
-registerPermissionGroupHandlers(ipcMain, repos.permissionGroup);
-registerTaskReminderHandlers(ipcMain, repos.taskReminder);
-registerAnnouncementHandlers(ipcMain, repos.announcement);
-registerOperationsHandlers(ipcMain, repos.operations);
-registerPurchaseHandlers(ipcMain, repos.supplier, repos.purchaseOrder);
-registerWasteRecyclingHandlers(ipcMain, repos.wasteRecycling);
-registerAssistedServicesHandlers(ipcMain, repos.assistedServices);
-registerChatHandlers(ipcMain, repos.syncConfig, repos.chat, repos.user, appConfigPath);
+const authenticatedIpc = {
+  handle(channel: string, listener: (...args: any[]) => unknown) {
+    ipcMain.handle(channel, (event, ...args) => {
+      requireActiveUser(repos.user);
+      return listener(event, ...args);
+    });
+  },
+} as typeof ipcMain;
+
+registerSyncHandlers(authenticatedIpc, scheduler, repos.syncConfig);
+registerElderlyHandlers(authenticatedIpc, repos.elderly);
+registerConfigHandlers(authenticatedIpc, repos.syncConfig, scheduler);
+registerBuildingHandlers(authenticatedIpc, repos.building);
+registerFamilyContactHandlers(authenticatedIpc, repos.familyContact);
+registerHealthHandlers(authenticatedIpc, repos.health);
+registerAdmissionHandlers(authenticatedIpc, repos.admission);
+registerCareHandlers(authenticatedIpc, repos.care);
+registerFeeHandlers(authenticatedIpc, repos.fee);
+registerMealHandlers(authenticatedIpc, repos.meal);
+registerActivityHandlers(authenticatedIpc, repos.activity);
+registerContractHandlers(authenticatedIpc, repos.contract);
+registerNotificationHandlers(authenticatedIpc, repos.notification);
+registerLanHandlers(authenticatedIpc, lanServer, repos.user);
+registerUserHandlers(authenticatedIpc, repos.user);
+registerAttendanceHandlers(authenticatedIpc, repos.attendance);
+registerIotHandlers(authenticatedIpc, repos.iot, repos.taskReminder);
+registerPermissionGroupHandlers(authenticatedIpc, repos.permissionGroup);
+registerTaskReminderHandlers(authenticatedIpc, repos.taskReminder);
+registerAnnouncementHandlers(authenticatedIpc, repos.announcement);
+registerOperationsHandlers(authenticatedIpc, repos.operations);
+registerPurchaseHandlers(authenticatedIpc, repos.supplier, repos.purchaseOrder);
+registerWasteRecyclingHandlers(authenticatedIpc, repos.wasteRecycling);
+registerAssistedServicesHandlers(authenticatedIpc, repos.assistedServices);
+registerChatHandlers(authenticatedIpc, repos.syncConfig, repos.chat, repos.user, appConfigPath);
 registerDbHandlers(
-  ipcMain,
+  authenticatedIpc,
   defaultDbPath,
   appConfigPath,
   pendingRestorePath,

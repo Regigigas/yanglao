@@ -21,12 +21,21 @@ export function loadPersistedSession(): PersistedSession | null {
     const filePath = sessionFilePath()
     if (!existsSync(filePath)) return null
     const data = JSON.parse(readFileSync(filePath, 'utf-8')) as PersistedSession
-    if (!data?.userId || !data.expiresAt || data.expiresAt < Date.now()) {
+    if (
+      !data
+      || typeof data.userId !== 'string'
+      || !data.userId
+      || typeof data.expiresAt !== 'number'
+      || !Number.isFinite(data.expiresAt)
+      || data.expiresAt < Date.now()
+    ) {
       clearPersistedSession()
       return null
     }
     return data
   } catch {
+    // 文件被意外截断或篡改时清理它，避免后续每次启动都重复读取无效内容。
+    clearPersistedSession()
     return null
   }
 }
