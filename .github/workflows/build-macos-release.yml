@@ -36,7 +36,12 @@ jobs:
           cache-dependency-path: before/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # 使用 better-sqlite3 自带预编译二进制，避免 node-gyp 依赖本机 Python。
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Prepare Electron runtime
+        working-directory: before/apps/desktop
+        run: node node_modules/electron/install.js
 
       - name: Build desktop application
         run: pnpm --filter @yanglao/desktop build

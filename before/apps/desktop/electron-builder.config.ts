@@ -1,7 +1,11 @@
 import type { Configuration } from 'electron-builder'
 import { existsSync } from 'fs'
+import { dirname, join } from 'path'
 
 const hasIcon = (path: string): boolean => existsSync(path)
+// pnpm 的 node-linker 可能将 Electron 提升到 workspace 根目录，不能假设它
+// 一定位于 apps/desktop/node_modules。由 Node 解析真实安装位置，供本地与 CI 共用。
+const electronDist = join(dirname(require.resolve('electron/package.json')), 'dist')
 
 const config: Configuration = {
   appId: 'com.yanglao.desktop',
@@ -11,7 +15,7 @@ const config: Configuration = {
     buildResources: 'resources',
     output: 'release',
   },
-  electronDist: process.platform === 'win32' ? 'node_modules/electron/dist' : undefined,
+  electronDist,
   extraResources: [
     { from: 'resources/icon.ico', to: 'icon.ico' },
     { from: 'resources/icon.png', to: 'icon.png' },

@@ -35,7 +35,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: before
-        run: pnpm install --frozen-lockfile
+        # better-sqlite3 已包含与 Electron 兼容的预编译二进制；跳过 node-gyp，
+        # 避免构建环境缺少 Python/Visual Studio 时中断发布。
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Prepare Electron runtime
         working-directory: before/apps/desktop
@@ -63,5 +65,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --title "$RELEASE_TAG 测试版" --generate-notes --prerelease
           gh release upload "$RELEASE_TAG" before/apps/desktop/release/*.exe before/apps/desktop/release/*.blockmap --clobber
