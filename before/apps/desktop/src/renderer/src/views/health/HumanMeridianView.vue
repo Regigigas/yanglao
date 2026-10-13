@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import {
   NAlert, NButton, NButtonGroup, NCard, NCheckbox, NDivider, NGrid, NGi, NList,
-  NListItem, NSlider, NSpace, NTabPane, NTabs, NTag,
+  NListItem, NSpace, NTabPane, NTabs, NTag,
 } from 'naive-ui';
 import BasePage from '@ui/components/BasePage.vue';
 import HumanMeridian3D from '../../components/HumanMeridian3D.vue';

@@ -412,7 +412,7 @@ function findDirectionalSurfaceProjection(
   const bestNormal = outwardDirection.clone();
   const projectsFrontBack = Math.abs(outwardDirection.z) > 0.5;
   let bestSliceDistanceSq = Number.POSITIVE_INFINITY;
-  vertexSets.forEach(({ positions, normals }) => {
+  vertexSets.forEach(({ positions }) => {
     for (let index = 0; index < positions.length; index += 3) {
       const deltaY = positions[index + 1] - point.y;
       const lateralDelta = projectsFrontBack
@@ -609,7 +609,7 @@ function createStaticProjectionSurface(source: THREE.Object3D): THREE.Group {
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
     const targetNormal = geometry.getAttribute('normal');
-    if (targetNormal && !targetNormal.isInterleavedBufferAttribute) {
+    if (targetNormal) {
       projectionVertexSets.push({
         positions: targetPosition.array as Float32Array,
         normals: targetNormal.array as Float32Array,
@@ -849,7 +849,7 @@ function updateMeridianLabels(): void {
 function isSurfacePointVisible(point: THREE.Vector3, normal: THREE.Vector3): boolean {
   if (!camera) return true;
   const cached = surfaceVisibilityCache.get(point);
-  if (cached?.cameraPosition.distanceToSquared(camera.position) < 0.000001) return cached.visible;
+  if (cached && cached.cameraPosition.distanceToSquared(camera.position) < 0.000001) return cached.visible;
   const directionToCamera = camera.position.clone().sub(point);
   const distanceToCamera = directionToCamera.length();
   const isFacingCamera = normal.dot(directionToCamera.normalize()) > -SURFACE_VISIBILITY_TOLERANCE;
@@ -863,11 +863,6 @@ function isSurfacePointVisible(point: THREE.Vector3, normal: THREE.Vector3): boo
   }
   surfaceVisibilityCache.set(point, { cameraPosition: camera.position.clone(), visible });
   return visible;
-}
-
-function isSurfaceNormalFacingCamera(point: THREE.Vector3, normal: THREE.Vector3): boolean {
-  if (!camera) return true;
-  return normal.dot(camera.position.clone().sub(point).normalize()) > -SURFACE_VISIBILITY_TOLERANCE;
 }
 
 function removeInteractiveObjects(root: THREE.Object3D): void {
