@@ -27,8 +27,8 @@ GitHub Releases 提供以下安装和部署包：
 
 - `yanglao-desktop-<version>-windows-x64.exe`：Windows Electron 安装包
 - `yanglao-desktop-<version>-macos-x64.dmg` / `yanglao-desktop-<version>-macos-arm64.dmg`：Intel 与 Apple 芯片 Mac 安装包
-- `yanglao-desktop-<version>-linux-x64.AppImage`：Linux 免安装应用
-- `yanglao-desktop-<version>-linux-x64.deb`：Debian/Ubuntu 安装包
+- `yanglao-desktop-<version>-linux-x86_64.AppImage`：Linux 免安装应用
+- `yanglao-desktop-<version>-linux-amd64.deb`：Debian/Ubuntu 安装包
 - `yanglao-online-<version>.zip`：线上同步服务部署包，包含 Web 静态资源、后端 JAR、SQL 和 Docker 配置
 
 推送 `v*` 格式的 Git 标签（例如 `v1.1.2`）会自动构建 macOS、Windows 和 Linux 桌面安装包，并上传到对应的 GitHub Release。也可在 GitHub Actions 的 **Build desktop releases** 工作流中手动运行并指定 Release 标签。
