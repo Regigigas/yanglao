@@ -54,6 +54,7 @@ const config: Configuration = {
     category: 'public.app-category.productivity',
   },
   linux: {
+    executableName: 'yanglao-desktop',
     target: [
       { target: 'AppImage', arch: ['x64'] },
       { target: 'deb', arch: ['x64'] },
