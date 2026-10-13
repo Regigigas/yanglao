@@ -1,0 +1,103 @@
+name: Build desktop releases
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing or new GitHub release tag
+        required: true
+        default: v1.1.2-beta.1
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }} packages
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            build_script: build:win
+            assets: |
+              before/apps/desktop/release/*.exe
+              before/apps/desktop/release/*.blockmap
+          - platform: macos
+            os: macos-14
+            build_script: build:mac
+            assets: |
+              before/apps/desktop/release/*.dmg
+              before/apps/desktop/release/*.dmg.blockmap
+          - platform: linux
+            os: ubuntu-latest
+            build_script: build:linux
+            assets: |
+              before/apps/desktop/release/*.AppImage
+              before/apps/desktop/release/*.deb
+    defaults:
+      run:
+        working-directory: before
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.17.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: before/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Prepare Electron runtime
+        working-directory: before/apps/desktop
+        run: node node_modules/electron/install.js
+
+      - name: Build installer packages
+        run: pnpm ${{ matrix.build_script }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yanglao-${{ matrix.platform }}
+          path: ${{ matrix.assets }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all platform packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: yanglao-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release and upload packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "$RELEASE_TAG" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber

@@ -54,7 +54,10 @@ const config: Configuration = {
     category: 'public.app-category.productivity',
   },
   linux: {
-    target: [{ target: 'AppImage', arch: ['x64'] }],
+    target: [
+      { target: 'AppImage', arch: ['x64'] },
+      { target: 'deb', arch: ['x64'] },
+    ],
     artifactName: 'yanglao-desktop-${version}-linux-${arch}.${ext}',
     icon: hasIcon('resources/icon.png') ? 'resources/icon.png' : undefined,
     category: 'Office',
