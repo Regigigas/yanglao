@@ -4,6 +4,7 @@
   "private": true,
   "description": "养老管理系统 Electron 桌面端",
   "author": "Regigigas",
+  "homepage": "https://github.com/Regigigas/yanglao",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

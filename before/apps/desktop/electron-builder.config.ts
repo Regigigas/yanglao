@@ -55,6 +55,7 @@ const config: Configuration = {
   },
   linux: {
     executableName: 'yanglao-desktop',
+    maintainer: 'Regigigas',
     target: [
       { target: 'AppImage', arch: ['x64'] },
       { target: 'deb', arch: ['x64'] },
